@@ -492,7 +492,8 @@ static ssize_t apollofb_wf_read(struct file *f, char __user *buf,
 	struct apollofb_par *par = f->private_data;
 
 	mutex_lock(&par->lock);
-	apollo_set_normal_mode(par);
+	if (par->options.use_sleep_mode)
+		apollo_set_normal_mode(par);
 
 	if (*f_pos > APOLLO_WAVEFORMS_FLASH_SIZE - 1)
 		return 0;
@@ -515,7 +516,8 @@ static ssize_t apollofb_wf_read(struct file *f, char __user *buf,
 		p++;
 	}
 
-	apollo_send_command(par, APOLLO_SLEEP_MODE);
+	if (par->options.use_sleep_mode)
+		apollo_send_command(par, APOLLO_SLEEP_MODE);
 	mutex_unlock(&par->lock);
 
 	*f_pos += count;
@@ -532,7 +534,8 @@ static ssize_t apollofb_wf_write(struct file *f, const char __user *buf,
 
 	mutex_lock(&par->lock);
 
-	apollo_set_normal_mode(par);
+	if (par->options.use_sleep_mode)
+		apollo_set_normal_mode(par);
 
 	if (*f_pos > APOLLO_WAVEFORMS_FLASH_SIZE - 1)
 		return 0;
@@ -554,7 +557,8 @@ static ssize_t apollofb_wf_write(struct file *f, const char __user *buf,
 		p++;
 	}
 
-	apollo_send_command(par, APOLLO_SLEEP_MODE);
+	if (par->options.use_sleep_mode)
+		apollo_send_command(par, APOLLO_SLEEP_MODE);
 	mutex_unlock(&par->lock);
 
 	*f_pos += count;
@@ -784,6 +788,23 @@ static void apollofb_remove_chrdev(struct apollofb_par *par)
 	unregister_chrdev_region(par->cdev.dev, 1);
 }
 
+static u16 red4[] __read_mostly = {
+    0x0000, 0x5555, 0xaaaa, 0xffff
+};
+static u16 green4[] __read_mostly = {
+    0x0000, 0x5555, 0xaaaa, 0xffff
+};
+static u16 blue4[] __read_mostly = {
+    0x0000, 0x5555, 0xaaaa, 0xffff
+};
+
+
+static const struct fb_cmap eink_apollofb_4_colors = {
+	    .len=4, .red=red4, .green=green4, .blue=blue4
+};
+
+
+
 static int __devinit apollofb_probe(struct platform_device *dev)
 {
 	struct fb_info *info;
@@ -837,6 +858,7 @@ static int __devinit apollofb_probe(struct platform_device *dev)
 	fb_deferred_io_init(info);
 
 	fb_alloc_cmap(&info->cmap, 4, 0);
+	fb_copy_cmap(&eink_apollofb_4_colors, &info->cmap);
 
 	if (par->ops->initialize)
 		par->ops->initialize();
