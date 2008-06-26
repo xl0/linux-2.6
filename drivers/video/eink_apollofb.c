@@ -961,7 +961,9 @@ static int apollofb_suspend(struct platform_device *pdev, pm_message_t message)
 {
 	struct apollofb_par *par = platform_get_drvdata(pdev);
 
+	mutex_lock(&par->lock);
 	apollo_send_command(par, APOLLO_STANDBY_MODE);
+	mutex_unlock(&par->lock);
 
 	return 0;
 }
@@ -970,9 +972,11 @@ static int apollofb_resume(struct platform_device *pdev)
 {
 	struct apollofb_par *par = platform_get_drvdata(pdev);
 
+	mutex_lock(&par->lock);
 	apollo_wakeup(par);
 	if (!par->options.use_sleep_mode)
 		apollo_set_normal_mode(par);
+	mutex_unlock(&par->lock);
 
 	return 0;
 }
