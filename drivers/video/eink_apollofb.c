@@ -988,6 +988,7 @@ static int apollofb_suspend(struct platform_device *pdev, pm_message_t message)
 
 	mutex_lock(&par->lock);
 	apollo_send_command(par, APOLLO_STANDBY_MODE);
+	par->current_mode = APOLLO_STATUS_MODE_SLEEP;
 	mutex_unlock(&par->lock);
 
 	return 0;
@@ -999,7 +1000,7 @@ static int apollofb_resume(struct platform_device *pdev)
 
 	mutex_lock(&par->lock);
 	apollo_wakeup(par);
-	if (par->current_mode == APOLLO_STATUS_MODE_SLEEP)
+	if (!par->options.use_sleep_mode)
 		apollo_set_normal_mode(par);
 	mutex_unlock(&par->lock);
 
