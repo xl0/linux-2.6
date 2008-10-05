@@ -242,6 +242,11 @@ static inline bool is_leap_year(unsigned int year)
 extern int rtc_hctosys(void);
 #endif
 
+#ifdef CONFIG_RTC_SYSTOHC
+extern int rtc_systohc(unsigned long time);
+#endif
+
+
 #endif /* __KERNEL__ */
 
 #endif /* _LINUX_RTC_H_ */
