@@ -238,6 +238,10 @@ static inline bool is_leap_year(unsigned int year)
 	return (!(year % 4) && (year % 100)) || !(year % 400);
 }
 
+#ifdef CONFIG_RTC_HCTOSYS
+extern int rtc_hctosys(void);
+#endif
+
 #endif /* __KERNEL__ */
 
 #endif /* _LINUX_RTC_H_ */
