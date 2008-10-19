@@ -1042,6 +1042,9 @@ void mmc_rescan(struct work_struct *work)
 	u32 ocr;
 	int err;
 
+	if (host->suspended)
+		return;
+
 	mmc_bus_get(host);
 
 	/* if there is a card registered, check whether it is still present */
@@ -1265,6 +1268,8 @@ int mmc_suspend_host(struct mmc_host *host, pm_message_t state)
 	if (!err)
 		mmc_power_off(host);
 
+	host->suspended = 1;
+
 	return err;
 }
 
@@ -1304,6 +1309,8 @@ int mmc_resume_host(struct mmc_host *host)
 	 * in parallel.
 	 */
 	mmc_detect_change(host, 1);
+
+	host->suspended = 0;
 
 	return err;
 }
