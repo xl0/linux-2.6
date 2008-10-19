@@ -588,8 +588,6 @@ static int mmc_sd_resume(struct mmc_host *host)
 {
 	int err;
 
-	mutex_lock(&host->carddetect_lock);
-
 	BUG_ON(!host);
 	BUG_ON(!host->card);
 
@@ -606,7 +604,6 @@ static void mmc_sd_power_restore(struct mmc_host *host)
 	mmc_claim_host(host);
 	mmc_sd_init_card(host, host->ocr, host->card);
 	mmc_release_host(host);
-	mutex_unlock(&host->carddetect_lock);
 }
 
 #ifdef CONFIG_MMC_UNSAFE_RESUME
