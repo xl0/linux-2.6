@@ -11,6 +11,12 @@ config ARCH_MX1ADS
 	help
 	  Say Y here if you are using Motorola MX1ADS/MXLADS boards
 
+config MACH_SONY_PRS505
+	bool "Sony PRS-505 book reader"
+	depends on ARCH_IMX
+	  help
+	  Say Y here if you are using the Sony PRS-505 book reader.
+
 config MACH_SCB9328
 	bool "Synertronixx scb9328"
 	help

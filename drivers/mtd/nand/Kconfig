@@ -501,4 +501,8 @@ config MTD_NAND_W90P910
 	  This enables the driver for the NAND Flash on evaluation board based
 	  on w90p910.
 
+config MTD_NAND_EB
+	tristate "Support for NAND Flash on Sony PRS-505 Ebook"
+	depends on MTD_NAND && MTD_EB
+
 endif # MTD_NAND
