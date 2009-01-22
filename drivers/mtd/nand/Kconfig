@@ -501,4 +501,71 @@ config MTD_NAND_W90P910
 	  This enables the driver for the NAND Flash on evaluation board based
 	  on w90p910.
 
+config MTD_NAND_JZ4730
+	tristate "Support NAND Flash device on Jz4730 board"
+	depends on SOC_JZ4730
+	help
+	Support NAND Flash device on Jz4730 board
+
+config MTD_NAND_JZ4740
+	tristate "Support NAND Flash device on Jz4740 board"
+	depends on SOC_JZ4740
+	help
+	Support NAND Flash device on Jz4740 board
+
+config MTD_NAND_JZ4750
+	tristate "Support NAND Flash device on Jz4750 board"
+	depends on SOC_JZ4750
+	help
+	Support NAND Flash device on Jz4750 board
+
+if     MTD_NAND_JZ4740 || MTD_NAND_JZ4730 || MTD_NAND_JZ4750
+choice
+	prompt "ECC type"
+	default CONFIG_MTD_SW_HM_ECC
+
+config	MTD_HW_HM_ECC
+	depends on MTD_NAND_JZ4740 || MTD_NAND_JZ4730
+	bool 'Select hardware HM ECC'
+
+config  MTD_SW_HM_ECC
+	bool 'Select software HM ECC'
+
+config  MTD_HW_RS_ECC
+	depends on MTD_NAND_JZ4740
+	bool 'Select hardware RS ECC'
+
+config  MTD_HW_BCH_ECC
+	depends on MTD_NAND_JZ4750
+	bool 'Select hardware BCH ECC'
+endchoice
+
+choice
+	prompt "DMA mode"
+	depends on MTD_HW_BCH_ECC
+	default CONFIG_MTD_NAND_DMA
+
+config	MTD_NAND_DMA
+	bool 'use DMA'
+
+config	MTD_NAND_NO_DMA
+	bool "don't use DMA"
+
+endchoice
+
+choice
+	prompt "4 bit or 8 bit BCH ecc"
+	depends on MTD_HW_BCH_ECC
+	default CONFIG_MTD_HW_BCH_4BIT
+
+config	MTD_HW_BCH_4BIT
+	bool '4 bit'
+
+config	MTD_HW_BCH_8BIT
+	bool '8 bit'
+
+endchoice
+
+endif
+
 endif # MTD_NAND
