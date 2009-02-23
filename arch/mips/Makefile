@@ -187,7 +187,7 @@ load-$(CONFIG_AR7)		+= 0xffffffff94100000
 # Commond Ingenic JZ4730 series
 #
 core-$(CONFIG_SOC_JZ4730)	+= arch/mips/jz4730/
-cflags-$(CONFIG_SOC_JZ4730)	+= -Iinclude/asm-mips/mach-jz4730
+cflags-$(CONFIG_SOC_JZ4730)	+= -I$(srctree)/arch/mips/include/asm/mach-jz4730
 load-$(CONFIG_SOC_JZ4730)	+= 0xffffffff80010000
 
 #
@@ -195,7 +195,7 @@ load-$(CONFIG_SOC_JZ4730)	+= 0xffffffff80010000
 #
 
 core-$(CONFIG_SOC_JZ4740)	+= arch/mips/jz4740/
-cflags-$(CONFIG_SOC_JZ4740)	+= -Iinclude/asm-mips/mach-jz4740
+cflags-$(CONFIG_SOC_JZ4740)	+= -I$(srctree)/arch/mips/include/asm/mach-jz4740
 load-$(CONFIG_SOC_JZ4740)	+= 0xffffffff80010000
 
 #
@@ -203,7 +203,7 @@ load-$(CONFIG_SOC_JZ4740)	+= 0xffffffff80010000
 #
 
 core-$(CONFIG_SOC_JZ4750)	+= arch/mips/jz4750/
-cflags-$(CONFIG_SOC_JZ4750)	+= -Iinclude/asm-mips/mach-jz4750
+cflags-$(CONFIG_SOC_JZ4750)	+= -I$(srctree)/arch/mips/include/asm/mach-jz4750
 load-$(CONFIG_SOC_JZ4750)	+= 0xffffffff80010000
 
 #
