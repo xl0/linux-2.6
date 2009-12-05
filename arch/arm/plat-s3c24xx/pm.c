@@ -145,7 +145,7 @@ void s3c_pm_save_core(void)
 {
 #ifdef CONFIG_ARCH_LBOOK_V3
 	if (machine_is_lbook_v3()) {
-		s3c2410_gpio_setpin(S3C2410_GPC6, 1);
+		s3c2410_gpio_setpin(S3C2410_GPC(6), 1);
 	}
 #endif
 
@@ -154,7 +154,7 @@ void s3c_pm_save_core(void)
 
 #ifdef CONFIG_ARCH_LBOOK_V3
 	if (machine_is_lbook_v3()) {
-		s3c2410_gpio_setpin(S3C2410_GPC6, 1);
+		s3c2410_gpio_setpin(S3C2410_GPC(6), 1);
 	}
 #endif
 }
