@@ -266,10 +266,11 @@ static inline int usb_gadget_controller_number(struct usb_gadget *gadget)
 	else if (gadget_is_r8a66597(gadget))
 		return 0x25;
 	else if (gadget_is_s1r72v17(gadget))
-	else if (gadget_is_jz4730(gadget))
 		return 0x26;
-	else if (gadget_is_jz4740(gadget))
+	else if (gadget_is_jz4730(gadget))
 		return 0x27;
+	else if (gadget_is_jz4740(gadget))
+		return 0x28;
 	return -ENOENT;
 }
 
