@@ -73,7 +73,14 @@
 #define CSI_BASE_ADDR		(0x24000 + IMX_IO_PHYS)
 
 /* macro to get at IO space when running virtually */
-#define IO_ADDRESS(x)	((x) - IMX_IO_PHYS + IMX_IO_BASE)
+
+#ifdef __ASSEMBLER__
+#define IOMEM(x)		x
+#else
+#define IOMEM(x)		((void __force __iomem *)(x))
+#endif
+
+#define IO_ADDRESS(x)		IOMEM((x) - IMX_IO_PHYS + IMX_IO_BASE)
 
 /* define macros needed for entry-macro.S */
 #define AVIC_IO_ADDRESS(x)	IO_ADDRESS(x)
