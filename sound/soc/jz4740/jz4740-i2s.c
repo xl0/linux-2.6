@@ -256,6 +256,15 @@ static int jz4740_i2s_resume(struct snd_soc_dai *dai)
 		SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_44100 |\
 		SNDRV_PCM_RATE_48000)
 
+static struct snd_soc_dai_ops jz4740_i2s_ops = {
+	.startup = jz4740_i2s_startup,
+	.shutdown = jz4740_i2s_shutdown,
+	.trigger = jz4740_i2s_trigger,
+	.hw_params = jz4740_i2s_hw_params,
+	.set_fmt = jz4740_i2s_set_dai_fmt,
+	.set_sysclk = jz4740_i2s_set_dai_sysclk,
+};
+
 struct snd_soc_dai jz4740_i2s_dai = {
 	.name = "jz4740-i2s",
 	.id = 0,
@@ -274,14 +283,7 @@ struct snd_soc_dai jz4740_i2s_dai = {
 		.rates = JZ4740_I2S_RATES,
 		.formats = SNDRV_PCM_FMTBIT_S8 | SNDRV_PCM_FMTBIT_S16_LE,
 	},
-	.ops = {
-		.startup = jz4740_i2s_startup,
-		.shutdown = jz4740_i2s_shutdown,
-		.trigger = jz4740_i2s_trigger,
-		.hw_params = jz4740_i2s_hw_params,
-		.set_fmt = jz4740_i2s_set_dai_fmt,
-		.set_sysclk = jz4740_i2s_set_dai_sysclk,
-	},
+	.ops	= &jz4740_i2s_ops,
 };
 
 EXPORT_SYMBOL_GPL(jz4740_i2s_dai);

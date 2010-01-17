@@ -230,7 +230,7 @@ static int jzcodec_hw_params(struct snd_pcm_substream *substream,
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_device *socdev = rtd->socdev;
-	struct snd_soc_codec *codec = socdev->codec;
+	struct snd_soc_codec *codec = socdev->card->codec;
 	u16 reg_val = jzcodec_read_reg_cache(codec, ICODEC_2_LOW);
 
 	/* bit size. codec side */
@@ -276,7 +276,7 @@ static int jzcodec_pcm_trigger(struct snd_pcm_substream *substream, int cmd, str
 	u16 val;
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_device *socdev = rtd->socdev;
-	struct snd_soc_codec *codec = socdev->codec;
+	struct snd_soc_codec *codec = socdev->card->codec;
 
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
@@ -334,7 +334,7 @@ static int jzcodec_pcm_prepare(struct snd_pcm_substream *substream, struct snd_s
 {
 	/*struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_device *socdev = rtd->socdev;
-	struct snd_soc_codec *codec = socdev->codec; */
+	struct snd_soc_codec *codec = socdev->card->codec; */
 
 	return 0;
 }
@@ -343,7 +343,7 @@ static void jzcodec_shutdown(struct snd_pcm_substream *substream, struct snd_soc
 {
 	struct snd_soc_pcm_runtime *rtd = substream->private_data;
 	struct snd_soc_device *socdev = rtd->socdev;
-	struct snd_soc_codec *codec = socdev->codec;
+	struct snd_soc_codec *codec = socdev->card->codec;
 
 	/* deactivate */
 	if (!codec->active) {
@@ -511,6 +511,14 @@ static int jzcodec_set_bias_level(struct snd_soc_codec *codec, enum snd_soc_bias
 		SNDRV_PCM_RATE_48000)
 
 #define JZCODEC_FORMATS (SNDRV_PCM_FORMAT_S8 | SNDRV_PCM_FMTBIT_S16_LE)
+static struct snd_soc_dai_ops jzcodec_ops = {
+	.prepare = jzcodec_pcm_prepare,
+	.hw_params = jzcodec_hw_params,
+	.shutdown = jzcodec_shutdown,
+	.digital_mute = jzcodec_mute,
+	.set_sysclk = jzcodec_set_dai_sysclk,
+	.set_fmt = jzcodec_set_dai_fmt,
+};
 
 struct snd_soc_dai jzcodec_dai = {
 	.name = "JZCODEC",
@@ -526,14 +534,7 @@ struct snd_soc_dai jzcodec_dai = {
 		.channels_max = 2,
 		.rates = JZCODEC_RATES,
 		.formats = JZCODEC_FORMATS,},
-	.ops = {
-		.prepare = jzcodec_pcm_prepare,
-		.hw_params = jzcodec_hw_params,
-		.shutdown = jzcodec_shutdown,
-		.digital_mute = jzcodec_mute,
-		.set_sysclk = jzcodec_set_dai_sysclk,
-		.set_fmt = jzcodec_set_dai_fmt,
-	}
+	.ops =	&jzcodec_ops,
 };
 EXPORT_SYMBOL_GPL(jzcodec_dai);
 
@@ -542,7 +543,7 @@ static u16 jzcodec_reg_pm[JZCODEC_CACHEREGNUM];
 static int jzcodec_suspend(struct platform_device *pdev, pm_message_t state)
 {
 	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
-	struct snd_soc_codec *codec = socdev->codec;
+	struct snd_soc_codec *codec = socdev->card->codec;
 
 	jzcodec_reg_pm[ICODEC_1_LOW] = jzcodec_read_reg_cache(codec, ICODEC_1_LOW);
 	jzcodec_reg_pm[ICODEC_1_HIGH] = jzcodec_read_reg_cache(codec, ICODEC_1_HIGH);
@@ -556,7 +557,7 @@ static int jzcodec_suspend(struct platform_device *pdev, pm_message_t state)
 static int jzcodec_resume(struct platform_device *pdev)
 {
 	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
-	struct snd_soc_codec *codec = socdev->codec;
+	struct snd_soc_codec *codec = socdev->card->codec;
 	u16 reg_val;
 
 	jzcodec_set_bias_level(codec, SND_SOC_BIAS_STANDBY);
@@ -582,7 +583,7 @@ static int jzcodec_resume(struct platform_device *pdev)
  */
 static int jzcodec_init(struct snd_soc_device *socdev)
 {
-	struct snd_soc_codec *codec = socdev->codec;
+	struct snd_soc_codec *codec = socdev->card->codec;
 	int reg, ret = 0;
 	u16 reg_val;
 
@@ -690,7 +691,7 @@ static int jzcodec_probe(struct platform_device *pdev)
 	}
 
 	codec->private_data = jzcodec;
-	socdev->codec = codec;
+	socdev->card->codec = codec;
 	mutex_init(&codec->mutex);
 	INIT_LIST_HEAD(&codec->dapm_widgets);
 	INIT_LIST_HEAD(&codec->dapm_paths);
@@ -702,7 +703,7 @@ static int jzcodec_probe(struct platform_device *pdev)
 	ret = jzcodec_init(jzcodec_socdev);
 
 	if (ret < 0) {
-		codec = jzcodec_socdev->codec;
+		codec = jzcodec_socdev->card->codec;
 		err("failed to initialise jzcodec\n");
 		kfree(codec);
 	}
@@ -714,7 +715,7 @@ static int jzcodec_probe(struct platform_device *pdev)
 static int jzcodec_remove(struct platform_device *pdev)
 {
 	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
-	struct snd_soc_codec *codec = socdev->codec;
+	struct snd_soc_codec *codec = socdev->card->codec;
 
 	if (codec->control_data)
 		jzcodec_set_bias_level(codec, SND_SOC_BIAS_OFF);
