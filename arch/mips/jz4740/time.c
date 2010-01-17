@@ -61,7 +61,7 @@ static struct irqaction jz_irqaction = {
 };
 
 
-cycle_t jz_get_cycles(void)
+cycle_t jz_get_cycles(struct clocksource *cs)
 {
 	/* convert jiffes to jz timer cycles */
 	return (cycle_t)( jiffies*((JZ_TIMER_CLOCK)/HZ) + REG_TCU_TCNT(JZ_TIMER_CHAN));
