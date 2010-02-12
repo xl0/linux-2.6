@@ -23,7 +23,6 @@
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <linux/io.h>
-#include <linux/irq.h>
 #include <linux/ioport.h>
 #include <linux/tty.h>
 #include <linux/serial.h>
@@ -37,100 +36,27 @@
 #include <asm/reboot.h>
 #include <asm/pgtable.h>
 #include <asm/time.h>
-#include <asm/jzsoc.h>
+#include <asm/mach-jz4740/jz4740.h>
+#include <asm/mach-jz4740/regs.h>
+#include <asm/mach-jz4740/clock.h>
+#include <asm/mach-jz4740/serial.h>
 
-#ifdef CONFIG_PC_KEYB
-#include <asm/keyboard.h>
-#endif
-
-jz_clocks_t jz_clocks;
-
-EXPORT_SYMBOL(jz_clocks);
-
-extern char * __init prom_getcmdline(void);
+extern char *__init prom_getcmdline(void);
 extern void __init jz_board_setup(void);
 extern void jz_restart(char *);
 extern void jz_halt(void);
 extern void jz_power_off(void);
 extern void jz_time_init(void);
 
-static void __init sysclocks_setup(void)
-{
-#ifndef CONFIG_MIPS_JZ_EMURUS /* FPGA */
-	jz_clocks.cclk = __cpm_get_cclk();
-	jz_clocks.hclk = __cpm_get_hclk();
-	jz_clocks.pclk = __cpm_get_pclk();
-	jz_clocks.mclk = __cpm_get_mclk();
-	jz_clocks.lcdclk = __cpm_get_lcdclk();
-	jz_clocks.pixclk = __cpm_get_pixclk();
-	jz_clocks.i2sclk = __cpm_get_i2sclk();
-	jz_clocks.usbclk = __cpm_get_usbclk();
-	jz_clocks.mscclk = __cpm_get_mscclk();
-	jz_clocks.extalclk = __cpm_get_extalclk();
-	jz_clocks.rtcclk = __cpm_get_rtcclk();
-#else
-
-#define FPGACLK 8000000
-
-	jz_clocks.cclk = FPGACLK;
-	jz_clocks.hclk = FPGACLK;
-	jz_clocks.pclk = FPGACLK;
-	jz_clocks.mclk = FPGACLK;
-	jz_clocks.lcdclk = FPGACLK;
-	jz_clocks.pixclk = FPGACLK;
-	jz_clocks.i2sclk = FPGACLK;
-	jz_clocks.usbclk = FPGACLK;
-	jz_clocks.mscclk = FPGACLK;
-	jz_clocks.extalclk = FPGACLK;
-	jz_clocks.rtcclk = FPGACLK;
-#endif
-
-	printk("CPU clock: %dMHz, System clock: %dMHz, Peripheral clock: %dMHz, Memory clock: %dMHz\n",
-	       (jz_clocks.cclk + 500000) / 1000000,
-	       (jz_clocks.hclk + 500000) / 1000000,
-	       (jz_clocks.pclk + 500000) / 1000000,
-	       (jz_clocks.mclk + 500000) / 1000000);
-}
-
 static void __init soc_cpm_setup(void)
 {
-	/* Start all module clocks
-	 */
-	__cpm_start_all();
-
 	/* Enable CKO to external memory */
 	__cpm_enable_cko();
 
 	/* CPU enters IDLE mode when executing 'wait' instruction */
 	__cpm_idle_mode();
-
-	/* Setup system clocks */
-	sysclocks_setup();
 }
 
-static void __init soc_harb_setup(void)
-{
-//	__harb_set_priority(0x00);  /* CIM>LCD>DMA>ETH>PCI>USB>CBB */
-//	__harb_set_priority(0x03);  /* LCD>CIM>DMA>ETH>PCI>USB>CBB */
-//	__harb_set_priority(0x0a);  /* ETH>LCD>CIM>DMA>PCI>USB>CBB */
-}
-
-static void __init soc_emc_setup(void)
-{
-}
-
-static void __init soc_dmac_setup(void)
-{
-	__dmac_enable_module();
-}
-
-static void __init jz_soc_setup(void)
-{
-	soc_cpm_setup();
-	soc_harb_setup();
-	soc_emc_setup();
-	soc_dmac_setup();
-}
 
 static void __init jz_serial_setup(void)
 {
@@ -141,18 +67,18 @@ static void __init jz_serial_setup(void)
 	s.flags = UPF_BOOT_AUTOCONF | UPF_SKIP_TEST;
 	s.iotype = SERIAL_IO_MEM;
 	s.regshift = 2;
-	s.uartclk = jz_clocks.extalclk ;
+	s.uartclk = JZ_EXTAL;
 
 	s.line = 0;
 	s.membase = (u8 *)UART0_BASE;
-	s.irq = IRQ_UART0;
+	s.irq = JZ_IRQ_UART0;
 	if (early_serial_setup(&s) != 0) {
 		printk(KERN_ERR "Serial ttyS0 setup failed!\n");
 	}
 
 	s.line = 1;
 	s.membase = (u8 *)UART1_BASE;
-	s.irq = IRQ_UART1;
+	s.irq = JZ_IRQ_UART1;
 	if (early_serial_setup(&s) != 0) {
 		printk(KERN_ERR "Serial ttyS1 setup failed!\n");
 	}
@@ -176,9 +102,7 @@ void __init plat_mem_setup(void)
 	_machine_restart = jz_restart;
 	_machine_halt = jz_halt;
 	pm_power_off = jz_power_off;
-
-	jz_soc_setup();
+	soc_cpm_setup();
 	jz_serial_setup();
-	jz_board_setup();
 }
 

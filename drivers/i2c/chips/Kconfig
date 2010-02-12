@@ -34,4 +34,12 @@ config N516_LPC
 	help
 	  N516 keyboard & power controller driver
 
+config N526_LPC
+	tristate "N526 keys & power controller"
+	depends on I2C
+	depends on INPUT
+	depends on POWER_SUPPLY
+	help
+	  N526 keyboard & power controller driver
+
 endmenu

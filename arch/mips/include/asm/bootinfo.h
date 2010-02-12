@@ -72,9 +72,8 @@
 /*
  * Valid machtype for group INGENIC
  */
-#define  MACH_INGENIC_JZ4730	0	/* JZ4730 SOC		*/
+#define  MACH_INGENIC_JZ4720	0	/* JZ4730 SOC		*/
 #define  MACH_INGENIC_JZ4740	1	/* JZ4740 SOC		*/
-#define  MACH_INGENIC_JZ4750	2	/* JZ4750 SOC		*/
 
 #define CL_SIZE			COMMAND_LINE_SIZE
 

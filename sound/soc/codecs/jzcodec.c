@@ -16,6 +16,7 @@
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
 #include <sound/initval.h>
+#include <asm/mach-jz4740/regs.h>
 
 #include "../jz4740/jz4740-pcm.h"
 #include "jzcodec.h"
@@ -42,11 +43,56 @@
 #define warn(format, arg...) \
 	printk(KERN_WARNING AUDIO_NAME ": " format "\n" , ## arg)
 
+#define JZ_REG_CODEC_1 0x0
+#define JZ_REG_CODEC_2 0x1
+
+#define JZ_CODEC_1_LINE_ENABLE BIT(29)
+#define JZ_CODEC_1_MIC_ENABLE BIT(28)
+#define JZ_CODEC_1_SW1_ENABLE BIT(27)
+#define JZ_CODEC_1_ADC_ENABLE BIT(26)
+#define JZ_CODEC_1_SW2_ENABLE BIT(25)
+#define JZ_CODEC_1_DAC_ENABLE BIT(24)
+#define JZ_CODEC_1_VREF_DISABLE BIT(20)
+#define JZ_CODEC_1_VREF_AMP_DISABLE BIT(19)
+#define JZ_CODEC_1_VREF_PULL_DOWN BIT(18)
+#define JZ_CODEC_1_VREF_LOW_CURRENT BIT(17)
+#define JZ_CODEC_1_VREF_HIGH_CURRENT BIT(16)
+#define JZ_CODEC_1_HEADPHONE_DISABLE BIT(14)
+#define JZ_CODEC_1_HEADPHONE_AMP_CHANGE_ANY BIT(13)
+#define JZ_CODEC_1_HEADPHONE_CHANGE BIT(12)
+#define JZ_CODEC_1_HEADPHONE_PULL_DOWN_M BIT(11)
+#define JZ_CODEC_1_HEADPHONE_PULL_DOWN_R BIT(10)
+#define JZ_CODEC_1_HEADPHONE_POWER_DOWN_M BIT(9)
+#define JZ_CODEC_1_HEADPHONE_POWER_DOWN BIT(8)
+#define JZ_CODEC_1_SUSPEND BIT(1)
+#define JZ_CODEC_1_RESET BIT(0)
+
+#define JZ_CODEC_1_LINE_ENABLE_OFFSET 29
+#define JZ_CODEC_1_MIC_ENABLE_OFFSET 28
+#define JZ_CODEC_1_SW1_ENABLE_OFFSET 27
+#define JZ_CODEC_1_ADC_ENABLE_OFFSET 26
+#define JZ_CODEC_1_SW2_ENABLE_OFFSET 25
+#define JZ_CODEC_1_DAC_ENABLE_OFFSET 24
+#define JZ_CODEC_1_HEADPHONE_DISABLE_OFFSET 14
+#define JZ_CODEC_1_HEADPHONE_POWER_DOWN_OFFSET 8
+
+#define JZ_CODEC_2_INPUT_VOLUME_MASK		0x1f0000
+#define JZ_CODEC_2_SAMPLE_RATE_MASK		0x000f00
+#define JZ_CODEC_2_MIC_BOOST_GAIN_MASK		0x000030
+#define JZ_CODEC_2_HEADPHONE_VOLUME_MASK	0x000003
+
+#define JZ_CODEC_2_INPUT_VOLUME_OFFSET          16
+#define JZ_CODEC_2_SAMPLE_RATE_OFFSET            8
+#define JZ_CODEC_2_MIC_BOOST_GAIN_OFFSET         4
+#define JZ_CODEC_2_HEADPHONE_VOLUME_OFFSET       0
+
+
 struct snd_soc_codec_device soc_codec_dev_jzcodec;
 
 /* codec private data */
 struct jzcodec_priv {
 	unsigned int sysclk;
+	void __iomem *base;
 };
 
 /*
@@ -584,21 +630,22 @@ static int jzcodec_resume(struct platform_device *pdev)
 static int jzcodec_init(struct snd_soc_device *socdev)
 {
 	struct snd_soc_codec *codec = socdev->card->codec;
+	struct jzcodec_priv *jzcodec = codec->private_data;
 	int reg, ret = 0;
 	u16 reg_val;
 
 	/* Default values at reset */
-	REG_ICDC_CDCCR1 = 0x001b2302;
-	REG_ICDC_CDCCR2 = 0x00017803;
+	writel(0x001b2302, jzcodec->base + JZ_REG_CODEC_1);
+	writel(0x00017803, jzcodec->base + JZ_REG_CODEC_2);
 	for (reg = 0; reg < JZCODEC_CACHEREGNUM / 2; reg++) {
 		switch (reg) {
 		case 0:
-			jzcodec_reg[reg] = REG_ICDC_CDCCR1;
+			jzcodec_reg[reg] = readl(jzcodec->base + JZ_REG_CODEC_1);
 			jzcodec_reg_LH[ICODEC_1_LOW] = jzcodec_reg[reg] & 0xffff;
 			jzcodec_reg_LH[ICODEC_1_HIGH] = (jzcodec_reg[reg] & 0xffff0000) >> 16;
 			break;
 		case 1:
-			jzcodec_reg[reg] = REG_ICDC_CDCCR2;
+			jzcodec_reg[reg] = readl(jzcodec->base + JZ_REG_CODEC_2);
 			jzcodec_reg_LH[ICODEC_2_LOW] = jzcodec_reg[reg] & 0xffff;
 			jzcodec_reg_LH[ICODEC_2_HIGH] = (jzcodec_reg[reg] & 0xffff0000) >> 16;
 			break;
@@ -660,14 +707,17 @@ static struct snd_soc_device *jzcodec_socdev;
 
 static int write_codec_reg(u16 * add, char * name, int reg)
 {
+	struct snd_soc_codec *codec = jzcodec_socdev->card->codec;
+	struct jzcodec_priv *jzcodec = codec->private_data;
+
 	switch (reg) {
 	case 0:
 	case 1:
-		REG_ICDC_CDCCR1 = jzcodec_reg[0];
+		writel(jzcodec_reg[0], jzcodec->base + JZ_REG_CODEC_1);
 		break;
 	case 2:
 	case 3:
-		REG_ICDC_CDCCR2 = jzcodec_reg[1];
+		writel(jzcodec_reg[1], jzcodec->base + JZ_REG_CODEC_2);
 		break;
 	}
 	return 0;
@@ -687,7 +737,14 @@ static int jzcodec_probe(struct platform_device *pdev)
 	jzcodec = kzalloc(sizeof(struct jzcodec_priv), GFP_KERNEL);
 	if (jzcodec == NULL) {
 		kfree(codec);
-		return -ENOMEM;
+		goto err_alloc_jzcodec;
+	}
+
+	jzcodec->base = ioremap(CPHYSADDR(AIC_BASE), 8);
+	if (!jzcodec->base) {
+		dev_err(&pdev->dev, "Failed to ioremap mmio memory\n");
+		ret = -EBUSY;
+		goto err_ioremap;
 	}
 
 	codec->private_data = jzcodec;
@@ -704,10 +761,18 @@ static int jzcodec_probe(struct platform_device *pdev)
 
 	if (ret < 0) {
 		codec = jzcodec_socdev->card->codec;
-		err("failed to initialise jzcodec\n");
-		kfree(codec);
+		dev_err(&pdev->dev, "failed to initialise jzcodec\n");
+		goto err_jzcodec_init;
 	}
 
+	return ret;
+
+err_jzcodec_init:
+	iounmap(jzcodec->base);
+err_ioremap:
+	kfree(jzcodec);
+err_alloc_jzcodec:
+	kfree(codec);
 	return ret;
 }
 
@@ -716,12 +781,14 @@ static int jzcodec_remove(struct platform_device *pdev)
 {
 	struct snd_soc_device *socdev = platform_get_drvdata(pdev);
 	struct snd_soc_codec *codec = socdev->card->codec;
+	struct jzcodec_priv *jzcodec = codec->private_data;
 
 	if (codec->control_data)
 		jzcodec_set_bias_level(codec, SND_SOC_BIAS_OFF);
 
 	snd_soc_free_pcms(socdev);
 	snd_soc_dapm_free(socdev);
+	iounmap(jzcodec->base);
 	kfree(codec->private_data);
 	kfree(codec);
 

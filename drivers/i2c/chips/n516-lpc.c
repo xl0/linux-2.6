@@ -20,10 +20,10 @@
 
 #include <linux/i2c.h>
 
-#include <asm/jzsoc.h>
+#include <asm/mach-jz4740/irq.h>
+#include <asm/mach-jz4740/gpio.h>
+#include <asm/mach-jz4740/board-n516.h>
 
-
-#define IRQ_LPC_INT	(IRQ_GPIO_0 + GPIO_LPC_INT)
 
 static int batt_level=0;
 module_param(batt_level, int, 0);
@@ -84,12 +84,12 @@ I2C_CLIENT_INSMOD_1(n516_lpc);
 
 static inline int n516_bat_usb_connected(void)
 {
-	return !__gpio_get_pin(GPIO_USB_DETECT);
+	return !gpio_get_value(GPIO_USB_DETECT);
 }
 
 static inline int n516_bat_charging(void)
 {
-	return !__gpio_get_pin(GPIO_CHARG_STAT_N);
+	return !gpio_get_value(GPIO_CHARG_STAT_N);
 }
 
 static int n516_bat_get_status(struct power_supply *b)
@@ -164,9 +164,11 @@ static irqreturn_t n516_bat_charge_irq(int irq, void *dev)
 	power_supply_changed(psy);
 
 	if (n516_bat_charging())
-		__gpio_as_irq_rise_edge(GPIO_CHARG_STAT_N);
+		set_irq_type(gpio_to_irq(GPIO_CHARG_STAT_N),
+				IRQ_TYPE_EDGE_RISING);
 	else
-		__gpio_as_irq_fall_edge(GPIO_CHARG_STAT_N);
+		set_irq_type(gpio_to_irq(GPIO_CHARG_STAT_N),
+				IRQ_TYPE_EDGE_FALLING);
 
 	return IRQ_HANDLED;
 }
@@ -180,7 +182,8 @@ static void n516_lpc_read_keys(struct work_struct *work)
 	int ret, i;
 	int long_press;
 
-	__gpio_as_input(GPIO_LPC_INT);
+	disable_irq(gpio_to_irq(GPIO_LPC_INT));
+
 	ret = i2c_transfer(client->adapter, &msg, 1);
 	if (ret != 1) {
 		dev_dbg(&client->dev, "I2C error\n");
@@ -215,7 +218,7 @@ static void n516_lpc_read_keys(struct work_struct *work)
 		if (the_lpc->suspending)
 			the_lpc->can_sleep = 0;
 	}
-	__gpio_as_irq_fall_edge(GPIO_LPC_INT);
+	enable_irq(gpio_to_irq(GPIO_LPC_INT));
 }
 
 static irqreturn_t n516_lpc_irq(int irq, void *dev_id)
@@ -249,7 +252,7 @@ static void n516_lpc_power_off(void)
 	unsigned char val = 0x01;
 	struct i2c_msg msg = {client->addr, client->flags, 1, &val};
 
-	__gpio_set_pin(GPIO_LED_EN);
+	gpio_set_value(GPIO_LED_EN, 1);
 	printk("Issue LPC POWEROFF command...\n");
 	while (1)
 		i2c_transfer(client->adapter, &msg, 1);
@@ -259,7 +262,6 @@ static int n516_lpc_detect(struct i2c_client *client, int kind, struct i2c_board
 {
 	return 0;
 }
-
 
 static int n516_lpc_suspend_notifier(struct notifier_block *nb,
 		                                unsigned long event,
@@ -284,7 +286,6 @@ static struct notifier_block n516_lpc_notif_block = {
 	.notifier_call = n516_lpc_suspend_notifier,
 };
 
-
 static int n516_lpc_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 	struct n516_lpc_chip *chip;
@@ -304,6 +305,18 @@ static int n516_lpc_probe(struct i2c_client *client, const struct i2c_device_id 
 		chip->battery_level = batt_level;
 	INIT_WORK(&chip->work, n516_lpc_read_keys);
 	i2c_set_clientdata(client, chip);
+
+	ret = gpio_request(GPIO_LPC_INT, "LPC interrupt request");
+	if (ret) {
+		dev_err(&client->dev, "Unable to reguest LPC INT GPIO\n");
+		goto err_gpio_req_lpcint;
+	}
+
+	ret = gpio_request(GPIO_CHARG_STAT_N, "LPC interrupt request");
+	if (ret) {
+		dev_err(&client->dev, "Unable to reguest CHARG STAT GPIO\n");
+		goto err_gpio_req_chargstat;
+	}
 
 	n516_lpc_set_normal_mode(chip);
 
@@ -346,25 +359,31 @@ static int n516_lpc_probe(struct i2c_client *client, const struct i2c_device_id 
 	if (n516_bat_usb_connected() && !n516_bat_charging())
 		the_lpc->battery_level = MAX_BAT_LEVEL;
 
-	__gpio_as_irq_fall_edge(GPIO_LPC_INT);
-	ret = request_irq(IRQ_LPC_INT, n516_lpc_irq, 0, "lpc", chip);
+	ret = request_irq(gpio_to_irq(GPIO_LPC_INT), n516_lpc_irq,
+			IRQF_TRIGGER_FALLING, "lpc", chip);
 	if (ret) {
 		dev_err(&client->dev, "request_irq failed: %d\n", ret);
 		goto err_request_lpc_irq;
 	}
 
 	if (n516_bat_charging())
-		__gpio_as_irq_rise_edge(GPIO_CHARG_STAT_N);
+		set_irq_type(gpio_to_irq(GPIO_LPC_INT), IRQ_TYPE_EDGE_RISING);
 	else
-		__gpio_as_irq_fall_edge(GPIO_CHARG_STAT_N);
+		set_irq_type(gpio_to_irq(GPIO_LPC_INT), IRQ_TYPE_EDGE_FALLING);
 
 	ret = request_irq(gpio_to_irq(GPIO_CHARG_STAT_N), n516_bat_charge_irq,
-				IRQF_SHARED,
-				"battery charging", &n516_battery);
+				IRQF_TRIGGER_FALLING, "battery charging", &n516_battery);
 	if (ret) {
 		dev_err(&client->dev, "Unable to claim battery charging IRQ\n");
 		goto err_request_chrg_irq;
 	}
+
+	if (n516_bat_charging())
+		set_irq_type(gpio_to_irq(GPIO_CHARG_STAT_N),
+				IRQ_TYPE_EDGE_RISING);
+	else
+		set_irq_type(gpio_to_irq(GPIO_CHARG_STAT_N),
+				IRQ_TYPE_EDGE_FALLING);
 
 	pm_power_off = n516_lpc_power_off;
 	ret = register_pm_notifier(&n516_lpc_notif_block);
@@ -379,7 +398,7 @@ static int n516_lpc_probe(struct i2c_client *client, const struct i2c_device_id 
 err_reg_pm_notifier:
 	free_irq(gpio_to_irq(GPIO_CHARG_STAT_N), &n516_battery);
 err_request_chrg_irq:
-	free_irq(IRQ_LPC_INT, chip);
+	free_irq(gpio_to_irq(GPIO_LPC_INT), chip);
 err_request_lpc_irq:
 	power_supply_unregister(&n516_battery);
 err_bat_reg:
@@ -387,6 +406,10 @@ err_bat_reg:
 err_input_register:
 	input_free_device(input);
 err_input_alloc:
+	gpio_free(GPIO_CHARG_STAT_N);
+err_gpio_req_chargstat:
+	gpio_free(GPIO_LPC_INT);
+err_gpio_req_lpcint:
 	i2c_set_clientdata(client, NULL);
 	kfree(chip);
 
@@ -400,11 +423,13 @@ static int n516_lpc_remove(struct i2c_client *client)
 	unregister_pm_notifier(&n516_lpc_notif_block);
 	pm_power_off = NULL;
 	free_irq(gpio_to_irq(GPIO_CHARG_STAT_N), &n516_battery);
-	__gpio_as_input(GPIO_LPC_INT);
-	free_irq(IRQ_LPC_INT, chip);
+	free_irq(gpio_to_irq(GPIO_LPC_INT), chip);
 	flush_scheduled_work();
 	power_supply_unregister(&n516_battery);
 	input_unregister_device(chip->input);
+	gpio_free(GPIO_CHARG_STAT_N);
+	gpio_free(GPIO_LPC_INT);
+	i2c_set_clientdata(client, NULL);
 	kfree(chip);
 
 	return 0;
@@ -416,13 +441,13 @@ static int n516_lpc_suspend(struct i2c_client *client, pm_message_t msg)
 	if (!the_lpc->can_sleep)
 		return -EBUSY;
 
-	disable_irq(IRQ_LPC_INT);
+	disable_irq(gpio_to_irq(GPIO_LPC_INT));
 	return 0;
 }
 
 static int n516_lpc_resume(struct i2c_client *client)
 {
-	enable_irq(IRQ_LPC_INT);
+	enable_irq(gpio_to_irq(GPIO_LPC_INT));
 	return 0;
 }
 #else

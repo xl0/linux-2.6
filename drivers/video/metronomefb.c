@@ -19,7 +19,7 @@
  *
  */
 
-/* #define DEBUG */
+#define DEBUG
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -515,12 +515,6 @@ static int __devinit metronome_init_regs(struct metronomefb_par *par)
 	if (par->board->power_ctl)
 		par->board->power_ctl(par, METRONOME_POWER_ON);
 
-	res = par->board->setup_io(par);
-	if (res) {
-		printk(KERN_ERR "metronomefb: setup_io() failed\n");
-		return res;
-	}
-
 	res =  metronome_bootup(par);
 
 	return res;
@@ -711,19 +705,23 @@ static ssize_t metronomefb_write(struct fb_info *info, const char __user *buf,
 	int err = 0;
 	unsigned long total_size;
 
+	printk("%s:%d\n", __FUNCTION__, __LINE__);
 	if (info->state != FBINFO_STATE_RUNNING)
 		return -EPERM;
 
 	total_size = info->fix.smem_len;
 
+	printk("%s:%d\n", __FUNCTION__, __LINE__);
 	if (p > total_size)
 		return -EFBIG;
 
+	printk("%s:%d\n", __FUNCTION__, __LINE__);
 	if (count > total_size) {
 		err = -EFBIG;
 		count = total_size;
 	}
 
+	printk("%s:%d\n", __FUNCTION__, __LINE__);
 	if (count + p > total_size) {
 		if (!err)
 			err = -ENOSPC;
@@ -735,12 +733,14 @@ static ssize_t metronomefb_write(struct fb_info *info, const char __user *buf,
 
 	mutex_lock(&par->lock);
 
+	printk("%s:%d\n", __FUNCTION__, __LINE__);
 	if (copy_from_user(dst, buf, count))
 		err = -EFAULT;
 
 	if  (!err)
 		*ppos += count;
 
+	printk("%s:%d\n", __FUNCTION__, __LINE__);
 	metronomefb_dpy_update(par, 0);
 	mutex_unlock(&par->lock);
 
@@ -1046,6 +1046,12 @@ static int __devinit metronomefb_probe(struct platform_device *dev)
 		goto err_csum_table;
 	}
 	par->firmware = fw_entry;
+
+	retval = board->setup_io(par);
+	if (retval) {
+		dev_err(&dev->dev, "metronomefb: setup_io() failed\n");
+		goto err_csum_table;
+	}
 
 	if (board->setup_irq(info))
 		goto err_csum_table;

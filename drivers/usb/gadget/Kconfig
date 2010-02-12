@@ -121,11 +121,25 @@ choice
 #
 # Integrated controllers
 #
+config USB_GADGET_JZ4740
+	boolean "JZ4740 UDC"
+	depends on SOC_JZ4740
+	select USB_GADGET_SELECTED
+	select USB_GADGET_DUALSPEED
+	help
+    	   Select this to support the Ingenic JZ4740 processor
+           high speed USB device controller.
+
+config USB_JZ4740
+	tristate
+	depends on USB_GADGET_JZ4740
+	default USB_GADGET
 
 config USB_GADGET_AT91
 	boolean "Atmel AT91 USB Device Port"
 	depends on ARCH_AT91 && !ARCH_AT91SAM9RL && !ARCH_AT91CAP9 && !ARCH_AT91SAM9G45
 	select USB_GADGET_SELECTED
+
 	help
 	   Many Atmel AT91 processors (such as the AT91RM2000) have a
 	   full speed USB Device Port with support for five configurable
@@ -174,38 +188,6 @@ config USB_FSL_USB2
 	depends on USB_GADGET_FSL_USB2
 	default USB_GADGET
 	select USB_GADGET_SELECTED
-
-config USB_GADGET_JZ4740
-	boolean "JZ4740 UDC"
-	depends on SOC_JZ4740
-	select USB_GADGET_DUALSPEED
-	help
-	   Select this to support the Ingenic JZ4740 processor
-           high speed USB device controller.
-
-config USB_JZ4740
-	tristate
-	depends on USB_GADGET_JZ4740
-	default USB_GADGET
-	select USB_GADGET_SELECTED
-
-config USB_GADGET_JZ4730
-	boolean "JZ4730 UDC"
-	depends on SOC_JZ4730
-	help
-	   Select this to support the Ingenic JZ4730 processor
-           full speed USB device controller.
-
-config USB_JZ4730
-	tristate
-	depends on USB_GADGET_JZ4730
-	default USB_GADGET
-	select USB_GADGET_SELECTED
-
-config USB_GADGET_AMD5536UDC
-	boolean "AMD5536 UDC"
-	depends on PCI
-	select USB_GADGET_DUALSPEED
 
 config USB_GADGET_LH7A40X
 	boolean "LH7A40X"
@@ -543,28 +525,28 @@ config USB_LANGWELL
 
 
 config USB_GADGET_S1R72V17
-	boolean "EPSON S1R72V17"
-	depends on MACH_SONY_PRS505
-	select USB_GADGET_DUALSPEED
-	help
-	   EPSON S1R72V17 is USB device controller.
-	   S1R72V17 supports both full and high speed USB 2.0 data transfers.
-	   It has 4 endpoints. 1 is only for endpoint0 and others could configure
+       boolean "EPSON S1R72V17"
+       depends on MACH_SONY_PRS505
+       select USB_GADGET_DUALSPEED
+       help
+          EPSON S1R72V17 is USB device controller.
+          S1R72V17 supports both full and high speed USB 2.0 data transfers.
+          It has 4 endpoints. 1 is only for endpoint0 and others could configure
            bulk or interrupt respectively.
 
-	   Say "y" to link the driver statically, or "m" to build a
-	   dynamically linked module called "s1r72xxx_udc" and force all
-	   gadget drivers to also be dynamically linked.
+          Say "y" to link the driver statically, or "m" to build a
+          dynamically linked module called "s1r72xxx_udc" and force all
+          gadget drivers to also be dynamically linked.
 
 config USB_S1R72V17_GADGET
-	tristate
-	depends on USB_GADGET_S1R72V17
-	default USB_GADGET
-	select USB_GADGET_SELECTED
+       tristate
+       depends on USB_GADGET_S1R72V17
+       default USB_GADGET
+       select USB_GADGET_SELECTED
 
 config USB_S1R72V17_GADGET_16BIT_FIX
-	boolean "16BIT FIXED BUS"
-	depends on USB_GADGET_S1R72V17
+       boolean "16BIT FIXED BUS"
+       depends on USB_GADGET_S1R72V17
 
 
 config USB_GADGET_DUMMY_HCD

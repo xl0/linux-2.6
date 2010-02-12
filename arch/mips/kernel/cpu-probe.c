@@ -922,8 +922,7 @@ static inline void cpu_probe_ingenic(struct cpuinfo_mips *c, unsigned int cpu)
 
 const char *__cpu_name[NR_CPUS];
 
-
-__init void cpu_probe(void)
+__cpuinit void cpu_probe(void)
 {
 	struct cpuinfo_mips *c = &current_cpu_data;
 	unsigned int cpu = smp_processor_id();
@@ -958,11 +957,9 @@ __init void cpu_probe(void)
 	case PRID_COMP_CAVIUM:
 		cpu_probe_cavium(c, cpu);
 		break;
-	case PRID_COMP_INGENIC:
+ 	case PRID_COMP_INGENIC:
 		cpu_probe_ingenic(c, cpu);
 		break;
-	default:
-		c->cputype = CPU_UNKNOWN;
 	}
 
 	BUG_ON(!__cpu_name[cpu]);

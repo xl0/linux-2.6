@@ -21,6 +21,8 @@
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
 
+#include <asm/mach-jz4740/board-n516.h>
+
 #include "../codecs/jzcodec.h"
 #include "jz4740-pcm.h"
 #include "jz4740-i2s.h"
@@ -110,13 +112,13 @@ static int n516_hw_params(struct snd_pcm_substream *substream,
 		SND_SOC_CLOCK_IN);
 	if (ret < 0)
 		return ret;
-
+#if 0
 	/* set the I2S system clock as input (unused) */
-	ret = cpu_dai->ops->set_sysclk(cpu_dai, JZ4740_I2S_SYSCLK, 0,
+	ret = cpu_dai->ops->set_sysclk(cpu_dai, JZ4740_I2S_CLKSRC_PLL, 0,
 		SND_SOC_CLOCK_IN);
 	if (ret < 0)
 		return ret;
-
+#endif
 	return 0;
 }
 
@@ -149,9 +151,9 @@ static int n516_set_spk(struct snd_kcontrol *kcontrol,
 static int n516_amp_event(struct snd_soc_dapm_widget *w, struct snd_kcontrol *c, int event)
 {
 	if (SND_SOC_DAPM_EVENT_ON(event))
-		__gpio_set_pin(GPIO_SPK_SHUD);
+		gpio_set_value(GPIO_SPK_SHUD, 1);
 	else
-		__gpio_clear_pin(GPIO_SPK_SHUD);
+		gpio_set_value(GPIO_SPK_SHUD, 0);
 
 	return 0;
 }
@@ -160,12 +162,14 @@ static void n516_hplug_timer_func(unsigned long data)
 {
 	struct snd_soc_codec *codec = (struct snd_soc_codec *)data;
 
-	n516_headphone_present = __gpio_get_pin(GPIO_HPHONE_PLUG);
+	n516_headphone_present = gpio_get_value(GPIO_HPHONE_PLUG);
 
 	if (n516_headphone_present)
-		__gpio_as_irq_fall_edge(GPIO_HPHONE_PLUG);
+		set_irq_type(gpio_to_irq(GPIO_HPHONE_PLUG),
+				IRQ_TYPE_EDGE_FALLING);
 	else
-		__gpio_as_irq_rise_edge(GPIO_HPHONE_PLUG);
+		set_irq_type(gpio_to_irq(GPIO_HPHONE_PLUG),
+				IRQ_TYPE_EDGE_RISING);
 
 	n516_ext_control(codec);
 }
@@ -279,38 +283,72 @@ static int __init n516_init(void)
 	if (!n516_snd_device)
 		return -ENOMEM;
 
+	ret = gpio_request(GPIO_HPHONE_PLUG, "Headphones detect");
+	if (ret) {
+		dev_err(&n516_snd_device->dev,
+				"Failed to request headphone detect GPIO\n");
+		goto err_gpio_hplug_request;
+	}
+
+	ret = gpio_request(GPIO_SPK_SHUD, "Speaker off");
+	if (ret) {
+		dev_err(&n516_snd_device->dev,
+				"Failed to request speaker off GPIO\n");
+		goto err_gpio_spk_shud_request;
+	}
+
+	gpio_direction_input(GPIO_HPHONE_PLUG);
+	gpio_direction_output(GPIO_SPK_SHUD, 0);
+	jz_gpio_disable_pullup(GPIO_HPHONE_PLUG);
+
 	platform_set_drvdata(n516_snd_device, &n516_snd_devdata);
 	n516_snd_devdata.dev = &n516_snd_device->dev;
+
 	ret = platform_device_add(n516_snd_device);
+	if (ret) {
+		goto err_platform_dev_add;
+	}
 
-	if (ret)
-		platform_device_put(n516_snd_device);
-
-	__gpio_disable_pull(GPIO_HPHONE_PLUG);
-
-	n516_headphone_present = __gpio_get_pin(GPIO_HPHONE_PLUG);
-
-	if (n516_headphone_present)
-		__gpio_as_irq_fall_edge(GPIO_HPHONE_PLUG);
-	else
-		__gpio_as_irq_rise_edge(GPIO_HPHONE_PLUG);
 
 	ret = request_irq(gpio_to_irq(GPIO_HPHONE_PLUG),
 			n516_hplug_irq, IRQF_SHARED,
 			"Headphone detect", (void *)123123);
 	if (ret) {
-		dev_err(&n516_snd_device->dev, "Unable to request headphone detection IRQ\n");
-		return ret;
+		dev_err(&n516_snd_device->dev,
+				"Unable to request headphone detection IRQ\n");
+		goto err_irq_request;
 	}
 
+	n516_headphone_present = gpio_get_value(GPIO_HPHONE_PLUG);
 
+	if (n516_headphone_present)
+		set_irq_type(gpio_to_irq(GPIO_HPHONE_PLUG),
+				IRQ_TYPE_EDGE_FALLING);
+	else
+		set_irq_type(gpio_to_irq(GPIO_HPHONE_PLUG),
+				IRQ_TYPE_EDGE_RISING);
+
+	return 0;
+
+	platform_device_unregister(n516_snd_device);
+	n516_snd_device = NULL;
+err_platform_dev_add:
+	free_irq(gpio_to_irq(GPIO_HPHONE_PLUG), (void *)123123);
+err_irq_request:
+	gpio_free(GPIO_SPK_SHUD);
+err_gpio_spk_shud_request:
+	gpio_free(GPIO_HPHONE_PLUG);
+err_gpio_hplug_request:
+	if (n516_snd_device)
+		platform_device_put(n516_snd_device);
 	return ret;
 }
 
 static void __exit n516_exit(void)
 {
 	free_irq(gpio_to_irq(GPIO_HPHONE_PLUG), (void *)123123);
-	__gpio_as_input(GPIO_HPHONE_PLUG);
+	gpio_free(GPIO_SPK_SHUD);
+	gpio_free(GPIO_HPHONE_PLUG);
 	platform_device_unregister(n516_snd_device);
 }
 

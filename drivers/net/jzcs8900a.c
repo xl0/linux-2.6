@@ -51,7 +51,8 @@
 #include <asm/system.h>
 #include <asm/bitops.h>
 #include <asm/io.h>
-#include <asm/jzsoc.h>
+#include <asm/mach-jz4740/gpio.h>
+#include <asm/mach-jz4740/regs.h>
 
 #include "jzcs8900a.h"
 
@@ -59,7 +60,7 @@
 #define INT_PIN                 0
 #ifdef CONFIG_SOC_JZ4740
 #define CIRRUS_DEFAULT_IO	0xa8000000
-#define CIRRUS_DEFAULT_IRQ	107
+#define CIRRUS_DEFAULT_IRQ	gpio_to_irq(59)
 
 #elif CONFIG_SOC_JZ4750
 #define CIRRUS_DEFAULT_IO	0xac000000
@@ -87,39 +88,33 @@ static struct net_device *dev;
  */  
 static void gpio_init_cs8900(void)
 {
-#ifdef CONFIG_SOC_JZ4740
-	__gpio_as_func0(60);             //CS4# 
-	__gpio_as_func0(61);             //RD#
-	__gpio_as_func0(62);             //WR# 
-	__gpio_as_irq_high_level(59);    //irq
-	__gpio_disable_pull(59);         //disable pull
+	gpio_request(60, "CS8900 CS#");
+	gpio_request(61, "CS8900 RD#");
+	gpio_request(62, "CS8900 WR#");
+	gpio_request(59, "CS8900 IRQ");
+	jz_gpio_set_function(60, JZ_GPIO_FUNC_NONE);
+	jz_gpio_set_function(61, JZ_GPIO_FUNC_NONE);
+	jz_gpio_set_function(62, JZ_GPIO_FUNC_NONE);
+	gpio_direction_input(59);
+	jz_gpio_disable_pullup(59);
+
 	REG_EMC_SMCR4 |= (1 << 6);       //16bit
-#elif CONFIG_SOC_JZ4750
-	__gpio_as_func0(32*2+23);             //CS3#
-	__gpio_as_func0(32*2+25);             //RD# 
-	__gpio_as_func0(32*2+26);             //WR# 
-
-#ifdef CONFIG_JZ4750_FUWA
-	__gpio_as_irq_high_level(32*4+20);    //irq
-	__gpio_disable_pull(32*4+20);         //disable pull
-#else
-	__gpio_as_irq_high_level(32*2 +6);    //irq
-	__gpio_disable_pull(32*2 +6);         //disable pull
-#endif
-
-	REG_EMC_SMCR3 |= (1 << 6);            //16bit
-#endif
 	udelay(1);
 }
 
 static inline u16 cirrus_read (struct net_device *dev,u16 reg)
 {
+	u16 ret;
+	printk(KERN_DEBUG "%s: base_addr = 0x%08lx, reg = 0x%04x\n", __FUNCTION__, dev->base_addr, reg);
 	outw (reg,dev->base_addr + PP_Address);
-	return (inw (dev->base_addr + PP_Data));
+	ret = (inw (dev->base_addr + PP_Data));
+	printk(KERN_DEBUG "%s: return 0x%04x\n", __FUNCTION__, ret);
+	return ret;
 }
 
 static inline void cirrus_write (struct net_device *dev,u16 reg,u16 value)
 {
+	printk(KERN_DEBUG "%s: base_addr = 0x%p, reg = 0x%04x, val = 0x%04x\n", __FUNCTION__, dev->base_addr, reg, value);
 	outw (reg,dev->base_addr + PP_Address);
 	outw (value,dev->base_addr + PP_Data);
 }
@@ -384,7 +379,7 @@ static int cirrus_start (struct net_device *dev)
 
 	/* start the queue */
 	netif_start_queue (dev);
-	__gpio_unmask_irq(59);
+	enable_irq(dev->irq);
 
 	//MOD_INC_USE_COUNT;
 	return (0);
@@ -546,7 +541,9 @@ int __init cirrus_probe(void)
 #endif
 
 	/* verify chip version */
+	while (1) {
 	value = cirrus_read (dev,PP_ProductID + 2);
+	}
 	if (VERSION (value) != CS8900A) {
 		printk (KERN_ERR "%s: unknown chip version 0x%.8x\n",dev->name,VERSION (value));
 		return (-ENXIO);

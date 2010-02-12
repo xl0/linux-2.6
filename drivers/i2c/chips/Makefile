@@ -13,6 +13,7 @@
 obj-$(CONFIG_DS1682)		+= ds1682.o
 obj-$(CONFIG_SENSORS_TSL2550)	+= tsl2550.o
 obj-$(CONFIG_N516_LPC)		+= n516-lpc.o
+obj-$(CONFIG_N516_LPC)		+= n526-lpc.o
 
 ifeq ($(CONFIG_I2C_DEBUG_CHIP),y)
 EXTRA_CFLAGS += -DDEBUG

@@ -1223,7 +1223,7 @@ static int nand_do_read_ops(struct mtd_info *mtd, loff_t from,
 		if (realpage != chip->pagebuf || oob) {
 			bufpoi = aligned ? buf : chip->buffers->databuf;
 
-#if defined(CONFIG_MTD_HW_RS_ECC) || defined(CONFIG_MTD_NAND_DMA)
+#if defined(CONFIG_MTD_NAND_JZ4740)
 			bufpoi[0] = (uint8_t)page;
 			bufpoi[1] = (uint8_t)(page >> 8);
 			bufpoi[2] = (uint8_t)(page >> 16);

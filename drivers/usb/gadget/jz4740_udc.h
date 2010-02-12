@@ -35,18 +35,18 @@ struct jz4740_ep {
 	struct jz4740_udc *dev;
 
 	const struct usb_endpoint_descriptor *desc;
-	struct list_head queue;
 	unsigned long pio_irqs;
 
-	u8 stopped;
-	u8 bEndpointAddress;
-	u8 bmAttributes;
+	uint8_t stopped;
+	uint8_t bEndpointAddress;
+	uint8_t bmAttributes;
 
-	ep_type_t ep_type;
-	u32 fifo;
+	ep_type_t type;
+	size_t fifo;
 	u32 csr;
 
-	u32 reg_addr;
+	uint32_t reg_addr;
+	struct list_head queue;
 };
 
 struct jz4740_request {
@@ -62,6 +62,12 @@ enum ep0state {
 	DATA_STATE_RECV,	/* data rx stage */
 };
 
+/* For function binding with UDC Disable - Added by River */
+typedef enum {
+	UDC_STATE_ENABLE = 0,
+	UDC_STATE_DISABLE,
+}udc_state_t;
+
 struct jz4740_udc {
 	struct usb_gadget gadget;
 	struct usb_gadget_driver *driver;
@@ -72,6 +78,14 @@ struct jz4740_udc {
 	struct jz4740_ep ep[UDC_MAX_ENDPOINTS];
 
 	unsigned char usb_address;
+	
+	udc_state_t state;
+
+	struct resource *mem;
+	void __iomem *base;
+	int irq;
+	uint32_t in_mask;
+	uint32_t out_mask;
 };
 
 extern struct jz4740_udc *the_controller;
@@ -79,27 +93,5 @@ extern struct jz4740_udc *the_controller;
 #define ep_is_in(EP) 		(((EP)->bEndpointAddress&USB_DIR_IN)==USB_DIR_IN)
 #define ep_maxpacket(EP) 	((EP)->ep.maxpacket)
 #define ep_index(EP) 		((EP)->bEndpointAddress&0xF)
-#define usb_set_index(i)	(REG8(USB_REG_INDEX) = (i))
-
-/*-------------------------------------------------------------------------*/
-
-/* 2.5 stuff that's sometimes missing in 2.4 */
-
-#ifndef container_of
-#define	container_of	list_entry
-#endif
-
-#ifndef likely
-#define likely(x)	(x)
-#define unlikely(x)	(x)
-#endif
-
-#ifndef BUG_ON
-#define BUG_ON(condition) do { if (unlikely((condition)!=0)) BUG(); } while(0)
-#endif
-
-#ifndef WARN_ON
-#define	WARN_ON(x)	do { } while (0)
-#endif
 
 #endif /* __USB_GADGET_JZ4740_H__ */

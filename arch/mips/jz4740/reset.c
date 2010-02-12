@@ -17,22 +17,26 @@
 #include <asm/processor.h>
 #include <asm/reboot.h>
 #include <asm/system.h>
-#include <asm/jzsoc.h>
+#include <asm/mach-jz4740/regs.h>
+#include <asm/mach-jz4740/timer.h>
+#include <asm/mach-jz4740/jz4740.h>
 
 void jz_restart(char *command)
 {
-	printk("Restarting after 4 ms\n");
+	printk(KERN_NOTICE "Restarting after 4 ms\n");
 	REG_WDT_TCSR = WDT_TCSR_PRESCALE4 | WDT_TCSR_EXT_EN;
 	REG_WDT_TCNT = 0;
 	REG_WDT_TDR = JZ_EXTAL/1000;   /* reset after 4ms */
-	REG_TCU_TSCR = TCU_TSSR_WDTSC; /* enable wdt clock */
+	jz4740_timer_enable_watchdog();
 	REG_WDT_TCER = WDT_TCER_TCEN;  /* wdt start */
 	while (1);
 }
 
 void jz_halt(void)
 {
-	printk(KERN_NOTICE "\n** You can safely turn off the power\n");
+	/* Put CPU to power down mode */
+	while (!(REG_RTC_RCR & RTC_RCR_WRDY));
+	REG_RTC_HCR = RTC_HCR_PD;
 
 	while (1)
 		__asm__(".set\tmips3\n\t"

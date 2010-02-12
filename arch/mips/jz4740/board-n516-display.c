@@ -8,7 +8,7 @@
  * more details.
  */
 
-/* #define DEBUG */
+#define DEBUG 
 
 #include <linux/module.h>
 #include <linux/kernel.h>
@@ -21,9 +21,10 @@
 #include <linux/platform_device.h>
 #include <linux/irq.h>
 #include <linux/gpio.h>
+#include <linux/jz4740_fb.h>
 
-#include <asm/jzlcd.h>
-#include <asm/jzsoc.h>
+#include <asm/mach-jz4740/platform.h>
+#include <asm/mach-jz4740/board-n516.h>
 
 #include <video/metronomefb.h>
 
@@ -31,42 +32,46 @@
 #define RST_GPIO_PIN	GPIO_DISPLAY_RST_L
 #define RDY_GPIO_PIN	GPIO_DISPLAY_RDY
 #define ERR_GPIO_PIN	GPIO_DISPLAY_ERR
-#define RDY_GPIO_IRQ	(IRQ_GPIO_0 + RDY_GPIO_PIN)
 
 extern struct platform_device jz_lcd_device;
 
-static struct jzfb_info n516_fbinfo = {
-	.fclk		= 50,
-	.w		= 800,
-	.h		= 624,
-	.bpp		= 16,
-	.hsw		= 31,
-	.vsw		= 23,
-	.elw		= 31,
-	.blw		= 5,
-	.efw		= 2,
-	.bfw		= 1,
-	.cfg		= MODE_TFT_GEN | HSYNC_P | VSYNC_P | PSM_DISABLE | CLSM_DISABLE | SPLM_DISABLE | REVM_DISABLE,
+static struct fb_videomode n516_fb_modes[] = {
+	[0] = {
+		.name		= "Metronome 800x600",
+		.refresh	= 50,
+		.xres		= 400,
+		.yres		= 600,
+		.hsync_len	= 31,
+		.vsync_len	= 23,
+		.right_margin	= 31,
+		.left_margin	= 5,
+		.upper_margin	= 2,
+		.lower_margin	= 1,
+	},
 };
 
+static struct jz4740_fb_platform_data n516_fb_pdata = {
+	.num_modes	= ARRAY_SIZE(n516_fb_modes),
+	.modes		= n516_fb_modes,
+	.bpp		= 16,
+	.lcd_type	= JZ_LCD_TYPE_GENERIC_16_18_BIT,
+};
 
 static struct platform_device *n516_device;
 static struct metronome_board n516_board;
 
 static int n516_init_gpio_regs(struct metronomefb_par *par)
 {
-	__gpio_as_output(STDBY_GPIO_PIN);
-	__gpio_as_output(RST_GPIO_PIN);
-	__gpio_clear_pin(STDBY_GPIO_PIN);
-	__gpio_clear_pin(RST_GPIO_PIN);
-
-	__gpio_as_input(RDY_GPIO_PIN);
-	__gpio_as_input(ERR_GPIO_PIN);
-
-	__gpio_as_irq_rise_edge(RDY_GPIO_PIN);
-
-	__gpio_as_output(GPIO_DISP_OFF_N);
-	__gpio_clear_pin(GPIO_DISP_OFF_N);
+	gpio_request(STDBY_GPIO_PIN, "Metronome STDBY");
+	gpio_direction_output(STDBY_GPIO_PIN, 0);
+	gpio_request(RST_GPIO_PIN, "Metronome RST");
+	gpio_direction_output(RST_GPIO_PIN, 0);
+	gpio_request(RDY_GPIO_PIN, "Metronome RDY");
+	gpio_direction_input(RDY_GPIO_PIN);
+	gpio_request(ERR_GPIO_PIN, "Metronome ERR");
+	gpio_direction_input(ERR_GPIO_PIN);
+	gpio_request(GPIO_DISP_OFF_N, "Metronome off");
+	gpio_direction_output(GPIO_DISP_OFF_N, 0);
 
 	return 0;
 }
@@ -74,9 +79,10 @@ static int n516_init_gpio_regs(struct metronomefb_par *par)
 static int n516_share_video_mem(struct fb_info *info)
 {
 	dev_dbg(&n516_device->dev, "ENTER %s\n", __func__);
+	dev_dbg(&n516_device->dev, "%s, info->var.xres = %u, info->var.yres = %u\n", __func__, info->var.xres, info->var.yres);
 	/* rough check if this is our desired fb and not something else */
-	if ((info->var.xres != n516_fbinfo.w)
-		|| (info->var.yres != n516_fbinfo.h))
+	if ((info->var.xres != n516_fb_pdata.modes[0].xres)
+		|| (info->var.yres != n516_fb_pdata.modes[0].yres))
 		return 0;
 
 	/* we've now been notified that we have our new fb */
@@ -136,8 +142,8 @@ static void __init n516_presetup_fb(void)
 	image data | CRC
 	*/
 
-	fw = n516_fbinfo.w;
-	fh = n516_fbinfo.h;
+	fw = n516_fb_pdata.modes[0].xres * n516_fb_pdata.bpp / 8;
+	fh = n516_fb_pdata.modes[0].yres;
 
 	/* waveform must be 16k + 2 for checksum */
 	n516_board.wfm_size = roundup(16*1024 + 2, fw);
@@ -155,13 +161,10 @@ static void __init n516_presetup_fb(void)
 	/* the reason we do this adjustment is because we want to acquire
 	 * more framebuffer memory without imposing custom awareness on the
 	 * underlying driver */
-	n516_fbinfo.h = DIV_ROUND_UP(totalsize, fw);
+	n516_fb_pdata.modes[0].yres = DIV_ROUND_UP(totalsize, fw);
 
-	/* we divide since we told the LCD controller we're 16bpp */
-	n516_fbinfo.w /= 2;
-
-	jz_lcd_device.dev.platform_data = &n516_fbinfo;
-	platform_device_register(&jz_lcd_device);
+	jz4740_framebuffer_device.dev.platform_data = &n516_fb_pdata;
+	platform_device_register(&jz4740_framebuffer_device);
 }
 
 /* this gets called by metronomefb as part of its init, in our case, we
@@ -195,7 +198,7 @@ static irqreturn_t n516_handle_irq(int irq, void *dev_id)
 {
 	struct metronomefb_par *par = dev_id;
 
-	dev_dbg(&par->pdev->dev, "Metronome IRQ! RDY=%d\n", __gpio_get_pin(RDY_GPIO_PIN));
+	dev_dbg(&par->pdev->dev, "Metronome IRQ! RDY=%d\n", gpio_get_value(RDY_GPIO_PIN));
 	wake_up_all(&par->waitq);
 
 	return IRQ_HANDLED;
@@ -205,24 +208,24 @@ static void n516_power_ctl(struct metronomefb_par *par, int cmd)
 {
 	switch (cmd) {
 	case METRONOME_POWER_OFF:
-		__gpio_set_pin(GPIO_DISP_OFF_N);
-		__lcd_clr_ena(); /* Quick Disable */
+		gpio_set_value(GPIO_DISP_OFF_N, 1);
+//FIXME		__lcd_clr_ena(); /* Quick Disable */
 		break;
 	case METRONOME_POWER_ON:
-		__lcd_set_ena();
-		__gpio_clear_pin(GPIO_DISP_OFF_N);
+//FIXME		__lcd_set_ena();
+		gpio_set_value(GPIO_DISP_OFF_N, 0);
 		break;
 	}
 }
 
 static int n516_get_rdy(struct metronomefb_par *par)
 {
-	return __gpio_get_pin(RDY_GPIO_PIN);
+	return gpio_get_value(RDY_GPIO_PIN);
 }
 
 static int n516_get_err(struct metronomefb_par *par)
 {
-	return __gpio_get_pin(ERR_GPIO_PIN);
+	return gpio_get_value(ERR_GPIO_PIN);
 }
 
 static int n516_setup_irq(struct fb_info *info)
@@ -230,11 +233,10 @@ static int n516_setup_irq(struct fb_info *info)
 	int ret;
 
 	dev_dbg(&n516_device->dev, "ENTER %s\n", __func__);
-	__gpio_as_irq_rise_edge(RDY_GPIO_PIN);
-	ret = request_irq(RDY_GPIO_IRQ, n516_handle_irq,
-				IRQF_DISABLED,
+
+	ret = request_irq(gpio_to_irq(RDY_GPIO_PIN), n516_handle_irq,
+				IRQF_TRIGGER_RISING,
 				"n516", info->par);
-	__gpio_unmask_irq(RDY_GPIO_PIN);
 	if (ret)
 		dev_err(&n516_device->dev, "request_irq failed: %d\n", ret);
 
@@ -243,51 +245,60 @@ static int n516_setup_irq(struct fb_info *info)
 
 static void n516_set_rst(struct metronomefb_par *par, int state)
 {
-	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n", __func__, __gpio_get_pin(RDY_GPIO_PIN));
+	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n", __func__, gpio_get_value(RDY_GPIO_PIN));
 	if (state)
-		__gpio_set_pin(RST_GPIO_PIN);
+		gpio_set_value(RST_GPIO_PIN, 1);
 	else
-		__gpio_clear_pin(RST_GPIO_PIN);
+		gpio_set_value(RST_GPIO_PIN, 0);
 }
 
 static void n516_set_stdby(struct metronomefb_par *par, int state)
 {
-	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n", __func__, __gpio_get_pin(RDY_GPIO_PIN));
+	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n", __func__, gpio_get_value(RDY_GPIO_PIN));
 	if (state)
-		__gpio_set_pin(STDBY_GPIO_PIN);
+		gpio_set_value(STDBY_GPIO_PIN, 1);
 	else
-		__gpio_clear_pin(STDBY_GPIO_PIN);
+		gpio_set_value(STDBY_GPIO_PIN, 0);
 }
 
 static int n516_wait_event(struct metronomefb_par *par)
 {
 	unsigned long timeout = jiffies + HZ/20;
 
-	dev_dbg(&n516_device->dev, "ENTER1 %s, RDY=%d\n", __func__, __gpio_get_pin(RDY_GPIO_PIN));
+	dev_dbg(&n516_device->dev, "ENTER1 %s, RDY=%d\n",
+			__func__, gpio_get_value(RDY_GPIO_PIN));
 	while (n516_get_rdy(par) && time_before(jiffies, timeout))
 		schedule();
 
-	dev_dbg(&n516_device->dev, "ENTER2 %s, RDY=%d\n", __func__, __gpio_get_pin(RDY_GPIO_PIN));
-	return wait_event_timeout(par->waitq, n516_get_rdy(par), HZ * 2) ? 0 : -EIO;
+	dev_dbg(&n516_device->dev, "ENTER2 %s, RDY=%d\n",
+			__func__, gpio_get_value(RDY_GPIO_PIN));
+	return wait_event_timeout(par->waitq,
+			n516_get_rdy(par), HZ * 2) ? 0 : -EIO;
 }
 
 static int n516_wait_event_intr(struct metronomefb_par *par)
 {
 	unsigned long timeout = jiffies + HZ/20;
 
-	dev_dbg(&n516_device->dev, "ENTER1 %s, RDY=%d\n", __func__, __gpio_get_pin(RDY_GPIO_PIN));
+	dev_dbg(&n516_device->dev, "ENTER1 %s, RDY=%d\n",
+			__func__, gpio_get_value(RDY_GPIO_PIN));
 	while (n516_get_rdy(par) && time_before(jiffies, timeout))
 		schedule();
 
-	dev_dbg(&n516_device->dev, "ENTER2 %s, RDY=%d\n", __func__, __gpio_get_pin(RDY_GPIO_PIN));
+	dev_dbg(&n516_device->dev, "ENTER2 %s, RDY=%d\n",
+			__func__, gpio_get_value(RDY_GPIO_PIN));
 	return wait_event_interruptible_timeout(par->waitq,
 					n516_get_rdy(par), HZ * 2) ? 0 : -EIO;
 }
 
 static void n516_cleanup(struct metronomefb_par *par)
 {
-	__gpio_as_input(RDY_GPIO_PIN);
-	free_irq(RDY_GPIO_IRQ, par);
+	free_irq(gpio_to_irq(RDY_GPIO_PIN), par);
+	gpio_free(RDY_GPIO_PIN);
+	gpio_free(RST_GPIO_PIN);
+	gpio_free(STDBY_GPIO_PIN);
+	gpio_free(ERR_GPIO_PIN);
+	gpio_free(GPIO_DISP_OFF_N);
 }
 
 static struct metronome_board n516_board = {

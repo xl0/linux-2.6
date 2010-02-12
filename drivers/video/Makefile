@@ -29,10 +29,6 @@ obj-$(CONFIG_FB_DEFERRED_IO)   += fb_defio.o
 
 # Hardware specific drivers go first
 obj-$(CONFIG_FB_AMIGA)            += amifb.o c2p_planar.o
-obj-$(CONFIG_FB_JZLCD_4730_4740)  += jzlcd.o
-obj-$(CONFIG_FB_JZ4740_SLCD)      += jz4740_slcd.o
-obj-$(CONFIG_FB_JZ4750_LCD)       += jz4750_lcd.o
-obj-$(CONFIG_FB_JZ4750_TVE)       += jz4750_tve.o
 obj-$(CONFIG_FB_ARC)              += arcfb.o
 obj-$(CONFIG_FB_CLPS711X)         += clps711xfb.o
 obj-$(CONFIG_FB_CYBER2000)        += cyber2000fb.o
@@ -133,6 +129,7 @@ obj-$(CONFIG_XEN_FBDEV_FRONTEND)  += xen-fbfront.o
 obj-$(CONFIG_FB_CARMINE)          += carminefb.o
 obj-$(CONFIG_FB_MB862XX)	  += mb862xx/
 obj-$(CONFIG_FB_MSM)              += msm/
+obj-$(CONFIG_FB_JZ4740)           += jz4740_fb.o
 
 # Platform or fallback drivers go here
 obj-$(CONFIG_FB_UVESA)            += uvesafb.o

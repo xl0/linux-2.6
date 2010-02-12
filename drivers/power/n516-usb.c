@@ -22,7 +22,7 @@
 #include <linux/pm.h>
 #include <linux/platform_device.h>
 
-#include <asm/jzsoc.h>
+#include <asm/mach-jz4740/board-n516.h>
 
 /* in ms */
 #define USB_STATUS_DELAY 50
@@ -31,7 +31,7 @@ static struct timer_list n516_usb_timer;
 
 static inline int n516_usb_connected(void)
 {
-	return !__gpio_get_pin(GPIO_USB_DETECT);
+	return !gpio_get_value(GPIO_USB_DETECT);
 }
 
 static int n516_usb_pwr_get_property(struct power_supply *psy,
@@ -54,9 +54,9 @@ static void n516_usb_pwr_change_timer_func(unsigned long data)
 	struct power_supply *psy = (struct power_supply *)data;
 
 	if (!n516_usb_connected())
-		__gpio_as_irq_fall_edge(GPIO_USB_DETECT);
+		set_irq_type(gpio_to_irq(GPIO_USB_DETECT), IRQ_TYPE_EDGE_FALLING);
 	else
-		__gpio_as_irq_rise_edge(GPIO_USB_DETECT);
+		set_irq_type(gpio_to_irq(GPIO_USB_DETECT), IRQ_TYPE_EDGE_RISING);
 
 	power_supply_changed(psy);
 }
@@ -98,20 +98,27 @@ static int __devinit n516_usb_pwr_probe(struct platform_device *pdev)
 
 	setup_timer(&n516_usb_timer, n516_usb_pwr_change_timer_func, (unsigned long)&n516_usb_psy);
 
+	ret = gpio_request(GPIO_USB_DETECT, "USB VBUS detect");
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to request USB VBUS detect gpio\n");
+		goto err_gpio_req;
+	}
+
 	ret = power_supply_register(NULL, &n516_usb_psy);
 	if (ret) {
 		dev_err(&pdev->dev, "Unable to register USB power supply\n");
 		goto err_psy_reg;
 	}
 
-	if (!n516_usb_connected())
-		__gpio_as_irq_fall_edge(GPIO_USB_DETECT);
-	else
-		__gpio_as_irq_rise_edge(GPIO_USB_DETECT);
-
 	ret = request_irq(gpio_to_irq(GPIO_USB_DETECT),
-			n516_usb_pwr_change_irq, IRQF_SHARED,
+			n516_usb_pwr_change_irq, IRQF_SHARED | IRQF_TRIGGER_FALLING,
 			"usb-power", &n516_usb_psy);
+
+	if (!n516_usb_connected())
+		set_irq_type(gpio_to_irq(GPIO_USB_DETECT), IRQ_TYPE_EDGE_FALLING);
+	else
+		set_irq_type(gpio_to_irq(GPIO_USB_DETECT), IRQ_TYPE_EDGE_RISING);
+
 	if (ret) {
 		dev_err(&pdev->dev, "Unable to claim IRQ\n");
 		goto err_claim_irq;
@@ -120,10 +127,12 @@ static int __devinit n516_usb_pwr_probe(struct platform_device *pdev)
 
 	return 0;
 
-	power_supply_unregister(&n516_usb_psy);
-err_psy_reg:
 	free_irq(gpio_to_irq(GPIO_USB_DETECT), &n516_usb_psy);
 err_claim_irq:
+	power_supply_unregister(&n516_usb_psy);
+err_psy_reg:
+	gpio_free(GPIO_USB_DETECT);
+err_gpio_req:
 
 	return ret;
 }
@@ -133,6 +142,7 @@ static int __devexit n516_usb_pwr_remove(struct platform_device *pdev)
 	free_irq(gpio_to_irq(GPIO_USB_DETECT), &n516_usb_psy);
 	del_timer_sync(&n516_usb_timer);
 	power_supply_unregister(&n516_usb_psy);
+	gpio_free(GPIO_USB_DETECT);
 
 	return 0;
 }

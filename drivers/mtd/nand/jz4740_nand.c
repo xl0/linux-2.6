@@ -1,349 +1,244 @@
 /*
- * linux/drivers/mtd/nand/jz4740_nand.c
+ *  Copyright (C) 2009, Lars-Peter Clausen <lars@metafoo.de>
+ *  	JZ4720/JZ4740 SoC NAND controller driver
  *
- * Copyright (c) 2005 - 2007 Ingenic Semiconductor Inc.
+ *  This program is free software; you can redistribute	 it and/or modify it
+ *  under  the terms of	 the GNU General  Public License as published by the
+ *  Free Software Foundation;  either version 2 of the	License, or (at your
+ *  option) any later version.
  *
- * Ingenic JZ4740 NAND driver
+ *  You should have received a copy of the  GNU General Public License along
+ *  with this program; if not, write  to the Free Software Foundation, Inc.,
+ *  675 Mass Ave, Cambridge, MA 02139, USA.
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
  */
 
-#include <linux/slab.h>
-#include <linux/module.h>
-#include <linux/delay.h>
-#include <linux/init.h>
+#include <linux/ioport.h>
 #include <linux/platform_device.h>
 
 #include <linux/mtd/mtd.h>
 #include <linux/mtd/nand.h>
-#include <linux/mtd/nand_ecc.h>
 #include <linux/mtd/partitions.h>
 
-#include <asm/io.h>
-#include <asm/jzsoc.h>
-#include <asm/mach-jz4740/jz4740-nand.h>
+#include <linux/mtd/jz4740_nand.h>
+#include <linux/gpio.h>
 
-#define NAND_DATA_PORT	       0xB8000000  /* read-write area */
+#define JZ_REG_NAND_CTRL	0x50
+#define JZ_REG_NAND_ECC_CTRL	0x100
+#define JZ_REG_NAND_DATA	0x104
+#define JZ_REG_NAND_PAR0	0x108
+#define JZ_REG_NAND_PAR1	0x10C
+#define JZ_REG_NAND_PAR2	0x110
+#define JZ_REG_NAND_IRQ_STAT	0x114
+#define JZ_REG_NAND_IRQ_CTRL	0x118
+#define JZ_REG_NAND_ERR(x)	(0x11C + (x << 2))
 
-#define PAR_SIZE 9
+#define JZ_NAND_ECC_CTRL_PAR_READY	BIT(4)
+#define JZ_NAND_ECC_CTRL_ENCODING	BIT(3)
+#define JZ_NAND_ECC_CTRL_RS		BIT(2)
+#define JZ_NAND_ECC_CTRL_RESET		BIT(1)
+#define JZ_NAND_ECC_CTRL_ENABLE		BIT(0)
 
-#define __nand_enable()	       (REG_EMC_NFCSR |= EMC_NFCSR_NFE1 | EMC_NFCSR_NFCE1)
-#define __nand_disable()       (REG_EMC_NFCSR &= ~EMC_NFCSR_NFCE1)
+#define JZ_NAND_STATUS_ERR_COUNT	(BIT(31) | BIT(30) | BIT(29))
+#define JZ_NAND_STATUS_PAD_FINISH	BIT(4)
+#define JZ_NAND_STATUS_DEC_FINISH	BIT(3)
+#define JZ_NAND_STATUS_ENC_FINISH	BIT(2)
+#define JZ_NAND_STATUS_UNCOR_ERROR	BIT(1)
+#define JZ_NAND_STATUS_ERROR		BIT(0)
 
-#define __nand_ecc_enable()    (REG_EMC_NFECR = EMC_NFECR_ECCE | EMC_NFECR_ERST )
-#define __nand_ecc_disable()   (REG_EMC_NFECR &= ~EMC_NFECR_ECCE)
+#define JZ_NAND_CTRL_ENABLE_CHIP(x) BIT(x << 1)
+#define JZ_NAND_CTRL_ASSERT_CHIP(x) BIT((x << 1) + 1)
 
-#define __nand_select_hm_ecc() (REG_EMC_NFECR &= ~EMC_NFECR_RS )
-#define __nand_select_rs_ecc() (REG_EMC_NFECR |= EMC_NFECR_RS)
+#define JZ_NAND_DATA_ADDR ((void __iomem *)0xB8000000)
+#define JZ_NAND_CMD_ADDR (JZ_NAND_DATA_ADDR + 0x8000)
+#define JZ_NAND_ADDR_ADDR (JZ_NAND_DATA_ADDR + 0x10000)
 
-#define __nand_read_hm_ecc()   (REG_EMC_NFECC & 0x00ffffff)
+struct jz_nand {
+	struct mtd_info mtd;
+	struct nand_chip chip;
+	void __iomem *base;
+	struct resource *mem;
 
-#define __nand_rs_ecc_encoding()	(REG_EMC_NFECR |= EMC_NFECR_RS_ENCODING)
-#define __nand_rs_ecc_decoding()	(REG_EMC_NFECR &= ~EMC_NFECR_RS_ENCODING)
-#define __nand_ecc_encode_sync() while (!(REG_EMC_NFINTS & EMC_NFINTS_ENCF))
-#define __nand_ecc_decode_sync() while (!(REG_EMC_NFINTS & EMC_NFINTS_DECF))
-
-
-#ifdef CONFIG_MTD_HW_RS_ECC
-/* ECC layout compatible with bootloader */
-
-static struct nand_ecclayout nand_oob_rs64 = {
-	.eccbytes = 36,
-	.eccpos = {
-		6,  7,  8,  9,  10, 11, 12, 13,
-		14, 15, 16, 17, 18, 19, 20, 21,
-		22, 23, 24, 25, 26, 27, 28, 29,
-		30, 31, 32, 33, 34, 35, 36, 37,
-		38, 39, 40, 41},
-	.oobfree = { {2, 4}, {42, 22} }
+	struct jz_nand_platform_data *pdata;
 };
 
-
-#endif
-
-static struct mtd_partition	*jz_parts = NULL;
-
-static void jz_hwcontrol(struct mtd_info *mtd, int dat,
-			 unsigned int ctrl)
+static inline struct jz_nand *mtd_to_jz_nand(struct mtd_info *mtd)
 {
-	struct nand_chip *this = (struct nand_chip *)(mtd->priv);
-	unsigned int nandaddr = (unsigned int)this->IO_ADDR_W;
+	return container_of(mtd, struct jz_nand, mtd);
+}
+
+static void jz_nand_cmd_ctrl(struct mtd_info *mtd, int dat, unsigned int ctrl)
+{
+	struct jz_nand *nand = mtd_to_jz_nand(mtd);
+	struct nand_chip *chip = mtd->priv;
+	uint32_t reg;
 
 	if (ctrl & NAND_CTRL_CHANGE) {
-		if ( ctrl & NAND_ALE )
-			nandaddr = (unsigned int)((unsigned long)(this->IO_ADDR_W) | 0x00010000);
+		BUG_ON((ctrl & NAND_ALE) && (ctrl & NAND_CLE));
+		if (ctrl & NAND_ALE)
+			chip->IO_ADDR_W = JZ_NAND_ADDR_ADDR;
+		else if (ctrl & NAND_CLE)
+			chip->IO_ADDR_W = JZ_NAND_CMD_ADDR;
 		else
-			nandaddr = (unsigned int)((unsigned long)(this->IO_ADDR_W) & ~0x00010000);
+			chip->IO_ADDR_W = JZ_NAND_DATA_ADDR;
 
-		if ( ctrl & NAND_CLE )
-			nandaddr = nandaddr | 0x00008000;
-		else
-			nandaddr = nandaddr & ~0x00008000;
+		reg = readl(nand->base + JZ_REG_NAND_CTRL);
 		if ( ctrl & NAND_NCE )
-			REG_EMC_NFCSR |= EMC_NFCSR_NFCE1;
+			reg |= JZ_NAND_CTRL_ASSERT_CHIP(0);
 		else
-			REG_EMC_NFCSR &= ~EMC_NFCSR_NFCE1;
+			reg &= ~JZ_NAND_CTRL_ASSERT_CHIP(0);
+		writel(reg, nand->base + JZ_REG_NAND_CTRL);
 	}
-
-	this->IO_ADDR_W = (void __iomem *)nandaddr;
 	if (dat != NAND_CMD_NONE)
-		writeb(dat, this->IO_ADDR_W);
+		writeb(dat, chip->IO_ADDR_W);
 }
 
-static int jz_device_ready(struct mtd_info *mtd)
+static int jz_nand_dev_ready(struct mtd_info *mtd)
 {
-	int ready, wait = 10;
-	while (wait--);
-	ready = __gpio_get_pin(94);
-	return ready;
+	struct jz_nand *nand = mtd_to_jz_nand(mtd);
+	return gpio_get_value_cansleep(nand->pdata->busy_gpio);
 }
 
-/*
- * EMC setup
- */
-static void jz_device_setup(void)
+static void jz_nand_hwctl(struct mtd_info *mtd, int mode)
 {
-	/* Set NFE bit */
-	REG_EMC_NFCSR |= EMC_NFCSR_NFE1;
+	struct jz_nand *nand = mtd_to_jz_nand(mtd);
+	uint32_t reg;
 
-	/* FIXME: Use real timings */
-	/* Read/Write timings */
-	REG_EMC_SMCR1 = 0x09221200;
-}
 
-#ifdef CONFIG_MTD_HW_HM_ECC
+	writel(0, nand->base + JZ_REG_NAND_IRQ_STAT);
+	reg = readl(nand->base + JZ_REG_NAND_ECC_CTRL);
 
-static int jzsoc_nand_calculate_hm_ecc(struct mtd_info* mtd,
-				       const u_char* dat, u_char* ecc_code)
-{
-	unsigned int calc_ecc;
-	unsigned char *tmp;
+	reg |= JZ_NAND_ECC_CTRL_RESET;
+	reg |= JZ_NAND_ECC_CTRL_ENABLE;
+	reg |= JZ_NAND_ECC_CTRL_RS;
 
-	__nand_ecc_disable();
-
-	calc_ecc = ~(__nand_read_hm_ecc()) | 0x00030000;
-
-	tmp = (unsigned char *)&calc_ecc;
-	//adjust eccbytes order for compatible with software ecc
-	ecc_code[0] = tmp[1];
-	ecc_code[1] = tmp[0];
-	ecc_code[2] = tmp[2];
-
-	return 0;
-}
-
-static void jzsoc_nand_enable_hm_hwecc(struct mtd_info* mtd, int mode)
-{
-	__nand_ecc_enable();
-	__nand_select_hm_ecc();
-}
-
-static int jzsoc_nand_hm_correct_data(struct mtd_info *mtd, u_char *dat,
-				     u_char *read_ecc, u_char *calc_ecc)
-{
-	u_char a, b, c, d1, d2, d3, add, bit, i;
-
-	/* Do error detection */
-	d1 = calc_ecc[0] ^ read_ecc[0];
-	d2 = calc_ecc[1] ^ read_ecc[1];
-	d3 = calc_ecc[2] ^ read_ecc[2];
-
-	if ((d1 | d2 | d3) == 0) {
-		/* No errors */
-		return 0;
-	}
-	else {
-		a = (d1 ^ (d1 >> 1)) & 0x55;
-		b = (d2 ^ (d2 >> 1)) & 0x55;
-		c = (d3 ^ (d3 >> 1)) & 0x54;
-
-		/* Found and will correct single bit error in the data */
-		if ((a == 0x55) && (b == 0x55) && (c == 0x54)) {
-			c = 0x80;
-			add = 0;
-			a = 0x80;
-			for (i=0; i<4; i++) {
-				if (d1 & c)
-					add |= a;
-				c >>= 2;
-				a >>= 1;
-			}
-			c = 0x80;
-			for (i=0; i<4; i++) {
-				if (d2 & c)
-					add |= a;
-				c >>= 2;
-				a >>= 1;
-			}
-			bit = 0;
-			b = 0x04;
-			c = 0x80;
-			for (i=0; i<3; i++) {
-				if (d3 & c)
-					bit |= b;
-				c >>= 2;
-				b >>= 1;
-			}
-			b = 0x01;
-			a = dat[add];
-			a ^= (b << bit);
-			dat[add] = a;
-			return 1;
-		}
-		else {
-			i = 0;
-			while (d1) {
-				if (d1 & 0x01)
-					++i;
-				d1 >>= 1;
-			}
-			while (d2) {
-				if (d2 & 0x01)
-					++i;
-				d2 >>= 1;
-			}
-			while (d3) {
-				if (d3 & 0x01)
-					++i;
-				d3 >>= 1;
-			}
-			if (i == 1) {
-				/* ECC Code Error Correction */
-				read_ecc[0] = calc_ecc[0];
-				read_ecc[1] = calc_ecc[1];
-				read_ecc[2] = calc_ecc[2];
-				return 1;
-			}
-			else {
-				/* Uncorrectable Error */
-				printk("NAND: uncorrectable ECC error\n");
-				return -1;
-			}
-		}
+	switch(mode) {
+	case NAND_ECC_READ:
+		reg &= ~JZ_NAND_ECC_CTRL_ENCODING;
+		break;
+	case NAND_ECC_WRITE:
+		reg |= JZ_NAND_ECC_CTRL_ENCODING;
+		break;
+	default:
+		break;
 	}
 
-	/* Should never happen */
-	return -1;
+	writel(reg, nand->base + JZ_REG_NAND_ECC_CTRL);
 }
 
-#endif /* CONFIG_MTD_HW_HM_ECC */
-
-#ifdef CONFIG_MTD_HW_RS_ECC
-
-static void jzsoc_nand_enable_rs_hwecc(struct mtd_info* mtd, int mode)
+static int jz_nand_calculate_ecc_rs(struct mtd_info* mtd, const uint8_t* dat,
+					uint8_t *ecc_code)
 {
-	REG_EMC_NFINTS = 0x0;
-	__nand_ecc_enable();
-	__nand_select_rs_ecc();
-
-	if (mode == NAND_ECC_READ)
-		__nand_rs_ecc_decoding();
-
-	if (mode == NAND_ECC_WRITE)
-		__nand_rs_ecc_encoding();
-}
-
-static void jzsoc_rs_correct(unsigned char *dat, int idx, int mask)
-{
+	struct jz_nand *nand = mtd_to_jz_nand(mtd);
+	uint32_t reg, status;
 	int i;
 
-	idx--;
+	do {
+		status = readl(nand->base + JZ_REG_NAND_IRQ_STAT);
+	} while(!(status & JZ_NAND_STATUS_ENC_FINISH));
 
-	i = idx + (idx >> 3);
-	if (i >= 512)
-		return;
+	reg = readl(nand->base + JZ_REG_NAND_ECC_CTRL);
+	reg &= ~JZ_NAND_ECC_CTRL_ENABLE;
+	writel(reg, nand->base + JZ_REG_NAND_ECC_CTRL);
 
-	mask <<= (idx & 0x7);
-
-	dat[i] ^= mask & 0xff;
-	if (i < 511)
-		dat[i+1] ^= (mask >> 8) & 0xff;
-}
-
-/*
- * calc_ecc points to oob_buf for us
- */
-static int jzsoc_nand_rs_correct_data(struct mtd_info *mtd, u_char *dat,
-				 u_char *read_ecc, u_char *calc_ecc)
-{
-	volatile u8 *paraddr = (volatile u8 *)EMC_NFPAR0;
-	short k;
-	u32 stat;
-
-	/* Set PAR values */
-	for (k = 0; k < PAR_SIZE; k++) {
-		*paraddr++ = read_ecc[k];
+	for (i = 0; i < 9; ++i) {
+		ecc_code[i] = readb(nand->base + JZ_REG_NAND_PAR0 + i);
 	}
 
-	/* Set PRDY */
-	REG_EMC_NFECR |= EMC_NFECR_PRDY;
+	return 0;
+}
 
-	/* Wait for completion */
-	__nand_ecc_decode_sync();
-	__nand_ecc_disable();
+static void correct_data(uint8_t *dat, int index, int mask)
+{
+	int offset = index & 0x7;
+	uint16_t data;
+	printk("correct: ");
 
-	/* Check decoding */
-	stat = REG_EMC_NFINTS;
+	index += (index >> 3);
 
-	if (stat & EMC_NFINTS_ERR) {
-		/* Error occurred */
-		if (stat & EMC_NFINTS_UNCOR) {
-			printk("NAND: Uncorrectable ECC error\n");
+	data = dat[index];
+	data |= dat[index+1] << 8;
+
+	printk("0x%x -> ", data);
+
+	mask ^= (data >> offset) & 0x1ff;
+	data &= ~(0x1ff << offset);
+	data |= (mask << offset);
+
+	printk("0x%x\n", data);
+
+	dat[index] = data & 0xff;
+	dat[index+1] = (data >> 8) & 0xff;
+}
+
+static int jz_nand_correct_ecc_rs(struct mtd_info* mtd, uint8_t *dat,
+				  uint8_t *read_ecc, uint8_t *calc_ecc)
+{
+	struct jz_nand *nand = mtd_to_jz_nand(mtd);
+	int i, error_count, index;
+	uint32_t reg, status, error;
+
+	for(i = 0; i < 9; ++i) {
+		if (read_ecc[i] != 0xff)
+			break;
+	}
+	if (i == 9) {
+		for (i = 0; i < nand->chip.ecc.size; ++i) {
+			if (dat[i] != 0xff)
+				break;
+		}
+		if (i == nand->chip.ecc.size)
+			return 0;
+	}
+
+	for(i = 0; i < 9; ++i)
+		writeb(read_ecc[i], nand->base + JZ_REG_NAND_PAR0 + i);
+
+	reg = readl(nand->base + JZ_REG_NAND_ECC_CTRL);
+	reg |= JZ_NAND_ECC_CTRL_PAR_READY;
+	writel(reg, nand->base + JZ_REG_NAND_ECC_CTRL);
+
+	do {
+		status = readl(nand->base + JZ_REG_NAND_IRQ_STAT);
+	} while (!(status & JZ_NAND_STATUS_DEC_FINISH));
+
+	reg = readl(nand->base + JZ_REG_NAND_ECC_CTRL);
+	reg &= ~JZ_NAND_ECC_CTRL_ENABLE;
+	writel(reg, nand->base + JZ_REG_NAND_ECC_CTRL);
+
+	if (status & JZ_NAND_STATUS_ERROR) {
+		if (status & JZ_NAND_STATUS_UNCOR_ERROR) {
+			printk("uncorrectable ecc:");
+			for(i = 0; i < 9; ++i)
+				printk(" 0x%x", read_ecc[i]);
+			printk("\n");
+			printk("uncorrectable data:");
+			for(i = 0; i < 32; ++i)
+				printk(" 0x%x", dat[i]);
+			printk("\n");
 			return -1;
 		}
-		else {
-			u32 errcnt = (stat & EMC_NFINTS_ERRCNT_MASK) >> EMC_NFINTS_ERRCNT_BIT;
-			switch (errcnt) {
-			case 4:
-				jzsoc_rs_correct(dat, (REG_EMC_NFERR3 & EMC_NFERR_INDEX_MASK) >> EMC_NFERR_INDEX_BIT, (REG_EMC_NFERR3 & EMC_NFERR_MASK_MASK) >> EMC_NFERR_MASK_BIT);
-				/* FALL-THROUGH */
-			case 3:
-				jzsoc_rs_correct(dat, (REG_EMC_NFERR2 & EMC_NFERR_INDEX_MASK) >> EMC_NFERR_INDEX_BIT, (REG_EMC_NFERR2 & EMC_NFERR_MASK_MASK) >> EMC_NFERR_MASK_BIT);
-				/* FALL-THROUGH */
-			case 2:
-				jzsoc_rs_correct(dat, (REG_EMC_NFERR1 & EMC_NFERR_INDEX_MASK) >> EMC_NFERR_INDEX_BIT, (REG_EMC_NFERR1 & EMC_NFERR_MASK_MASK) >> EMC_NFERR_MASK_BIT);
-				/* FALL-THROUGH */
-			case 1:
-				jzsoc_rs_correct(dat, (REG_EMC_NFERR0 & EMC_NFERR_INDEX_MASK) >> EMC_NFERR_INDEX_BIT, (REG_EMC_NFERR0 & EMC_NFERR_MASK_MASK) >> EMC_NFERR_MASK_BIT);
-				return errcnt;
-			default:
-				break;
+
+		error_count = (status & JZ_NAND_STATUS_ERR_COUNT) >> 29;
+
+		printk("error_count: %d %x\n", error_count, status);
+
+		for(i = 0; i < error_count; ++i) {
+			error = readl(nand->base + JZ_REG_NAND_ERR(i));
+			index = ((error >> 16) & 0x1ff) - 1;
+			if (index >= 0 && index < 512) {
+				correct_data(dat, index, error & 0x1ff);
 			}
 		}
+
+		return error_count;
 	}
 
 	return 0;
 }
 
-static int jzsoc_nand_calculate_rs_ecc(struct mtd_info* mtd, const u_char* dat,
-				u_char* ecc_code)
-{
-	volatile u8 *paraddr = (volatile u8 *)EMC_NFPAR0;
-	short i;
-
-	__nand_ecc_encode_sync();
-	__nand_ecc_disable();
-
-	for(i = 0; i < PAR_SIZE; i++) {
-		ecc_code[i] = *paraddr++;
-	}
-
-	return 0;
-}
-
-/**
- * nand_read_page_hwecc_rs - hardware rs ecc based page read function
- * @mtd:	mtd info structure
- * @chip:	nand chip info structure
- * @buf:	buffer to store read data
- *
- * Not for syndrome calculating ecc controllers which need a special oob layout
- */
 static int nand_read_page_hwecc_rs(struct mtd_info *mtd, struct nand_chip *chip,
-				   uint8_t *buf)
+				   uint8_t *buf, int page)
 {
 	int i, j;
 	int eccsize = chip->ecc.size;
@@ -353,16 +248,12 @@ static int nand_read_page_hwecc_rs(struct mtd_info *mtd, struct nand_chip *chip,
 	uint8_t *ecc_calc = chip->buffers->ecccalc;
 	uint8_t *ecc_code = chip->buffers->ecccode;
 	uint32_t *eccpos = chip->ecc.layout->eccpos;
-	uint32_t page;
 	uint8_t flag = 0;
-
-	page = (buf[3]<<24) + (buf[2]<<16) + (buf[1]<<8) + buf[0];
 
 	chip->cmdfunc(mtd, NAND_CMD_READOOB, 0, page);
 	chip->read_buf(mtd, chip->oob_poi, mtd->oobsize);
 	for (i = 0; i < chip->ecc.total; i++) {
 		ecc_code[i] = chip->oob_poi[eccpos[i]];
-//		if (ecc_code[i] != 0xff) flag = 1;
 	}
 
 	eccsteps = chip->ecc.steps;
@@ -396,7 +287,8 @@ static int nand_read_page_hwecc_rs(struct mtd_info *mtd, struct nand_chip *chip,
 	return 0;
 }
 
-const uint8_t empty_ecc[] = {0xcd, 0x9d, 0x90, 0x58, 0xf4, 0x8b, 0xff, 0xb7, 0x6f};
+const uint8_t empty_ecc[] = {
+	0xcd, 0x9d, 0x90, 0x58, 0xf4, 0x8b, 0xff, 0xb7, 0x6f};
 static void nand_write_page_hwecc_rs(struct mtd_info *mtd, struct nand_chip *chip,
 				  const uint8_t *buf)
 {
@@ -435,161 +327,183 @@ static void nand_write_page_hwecc_rs(struct mtd_info *mtd, struct nand_chip *chi
 
 	chip->write_buf(mtd, chip->oob_poi, mtd->oobsize);
 }
-#endif /* CONFIG_MTD_HW_RS_ECC */
 
-/*
- * Main initialization routine
- */
-static int __devinit jz4740_nand_probe(struct platform_device *pdev)
+#ifdef CONFIG_MTD_CMDLINE_PARTS
+static const char *part_probes[] = {"cmdlinepart", NULL};
+#endif
+
+static int __devinit jz_nand_probe(struct platform_device *pdev)
 {
-	struct nand_chip *this;
-	struct mtd_info *jz_mtd;
-	struct jz4740_pdata *pdata = pdev->dev.platform_data;
-	int res = 0;
+	int ret;
+	struct jz_nand *nand;
+	struct nand_chip *chip;
+	struct mtd_info *mtd;
+	struct jz_nand_platform_data *pdata = pdev->dev.platform_data;
+#ifdef CONFIG_MTD_PARTITIONS
+	struct mtd_partition *partition_info;
+	int num_partitions = 0;
+#endif
 
-
-	/* Allocate memory for MTD device structure and private data */
-	jz_mtd = kzalloc (sizeof(struct mtd_info) + sizeof (struct nand_chip),
-				GFP_KERNEL);
-	if (!jz_mtd) {
-		printk ("Unable to allocate JzSOC NAND MTD device structure.\n");
+	nand = kzalloc(sizeof(*nand), GFP_KERNEL);
+	if (!nand) {
+		dev_err(&pdev->dev, "Failed to allocate device structure.\n");
 		return -ENOMEM;
 	}
 
-	platform_set_drvdata(pdev, jz_mtd);
-
-	/* Get pointer to private data */
-	this = (struct nand_chip *) (&jz_mtd[1]);
-
-	/* Link the private data with the MTD structure */
-	jz_mtd->priv = this;
-	jz_mtd->owner = THIS_MODULE;
-	jz_mtd->name = dev_name(&pdev->dev);
-
-	/* Set & initialize NAND Flash controller */
-	jz_device_setup();
-
-        /* Set address of NAND IO lines */
-        this->IO_ADDR_R = (void __iomem *) NAND_DATA_PORT;
-        this->IO_ADDR_W = (void __iomem *) NAND_DATA_PORT;
-        this->cmd_ctrl = jz_hwcontrol;
-        this->dev_ready = jz_device_ready;
-
-#ifdef CONFIG_MTD_HW_HM_ECC
-	this->ecc.calculate = jzsoc_nand_calculate_hm_ecc;
-	this->ecc.correct   = jzsoc_nand_hm_correct_data;
-	this->ecc.hwctl     = jzsoc_nand_enable_hm_hwecc;
-	this->ecc.mode      = NAND_ECC_HW;
-	this->ecc.size      = 256;
-	this->ecc.bytes     = 3;
-
-#endif
-
-#ifdef CONFIG_MTD_HW_RS_ECC
-	this->ecc.calculate	= jzsoc_nand_calculate_rs_ecc;
-	this->ecc.correct	= jzsoc_nand_rs_correct_data;
-	this->ecc.hwctl		= jzsoc_nand_enable_rs_hwecc;
-	this->ecc.read_page	= nand_read_page_hwecc_rs;
-	this->ecc.write_page	= nand_write_page_hwecc_rs;
-	/* FIXME: Add suport of various oob sizes */
-	this->ecc.layout	= &nand_oob_rs64;
-	this->ecc.mode		= NAND_ECC_HW;
-	this->ecc.size		= 512;
-	this->ecc.bytes		= 9;
-#endif
-
-#ifdef  CONFIG_MTD_SW_HM_ECC
-	this->ecc.mode      = NAND_ECC_SOFT;
-#endif
-        /* 20 us command delay time */
-        this->chip_delay = 20;
-
-	/* Scan to find existance of the device */
-	if (nand_scan(jz_mtd, 1)) {
-		kfree (jz_mtd);
-		return -ENXIO;
+	nand->mem = platform_get_resource(pdev, IORESOURCE_MEM, 0);
+	if (!nand->mem) {
+		dev_err(&pdev->dev, "Failed to get platform mmio memory\n");
+		ret = -ENOENT;
+		goto err_free;
 	}
 
-#ifdef CONFIG_MTD_PARTITIONS
-	if (pdata->part_probe_types) {
-		res = parse_mtd_partitions(jz_mtd,
-				pdata->part_probe_types,
-				&jz_parts, 0);
-		if (res > 0) {
-			add_mtd_partitions(jz_mtd, jz_parts, res);
-			return 0;
+	nand->mem = request_mem_region(nand->mem->start, resource_size(nand->mem),
+					pdev->name);
+
+	if (!nand->mem) {
+		dev_err(&pdev->dev, "Failed to request mmio memory region\n");
+		ret = -EBUSY;
+		goto err_free;
+	}
+
+	nand->base = ioremap(nand->mem->start, resource_size(nand->mem));
+
+	if (!nand->base) {
+		dev_err(&pdev->dev, "Faild to ioremap mmio memory region\n");
+		ret = -EBUSY;
+		goto err_release_mem;
+	}
+
+	if (pdata && gpio_is_valid(pdata->busy_gpio)) {
+		ret = gpio_request(pdata->busy_gpio, "jz nand busy line");
+		if (ret) {
+			dev_err(&pdev->dev, "Failed to request busy gpio %d: %d\n",
+					pdata->busy_gpio, ret);
+			goto err_iounmap;
 		}
 	}
 
-	if (pdata->partitions)
-		res = add_mtd_partitions(jz_mtd, pdata->partitions, pdata->nr_partitions);
-	else
-#endif
-		res = add_mtd_device(jz_mtd);
+	mtd		= &nand->mtd;
+	chip		= &nand->chip;
+	mtd->priv	= chip;
+	mtd->owner	= THIS_MODULE;
+	mtd->name	= "jz4740-nand";
 
+	chip->ecc.hwctl		= jz_nand_hwctl;
 
-	return res;
-}
+	chip->ecc.calculate	= jz_nand_calculate_ecc_rs;
+	chip->ecc.correct	= jz_nand_correct_ecc_rs;
+	chip->ecc.read_page	= nand_read_page_hwecc_rs;
+	chip->ecc.write_page	= nand_write_page_hwecc_rs;
+	chip->ecc.mode		= NAND_ECC_HW;
+	chip->ecc.size		= 512;
+	chip->ecc.bytes		= 9;
+	if (pdata)
+		chip->ecc.layout = pdata->ecc_layout;
 
-/*
- * Clean up routine
- */
-static int __devexit jz4740_nand_remove(struct platform_device *pdev)
-{
-	struct mtd_info *jz_mtd = platform_get_drvdata(pdev);
+	chip->chip_delay = 50;
+	chip->cmd_ctrl = jz_nand_cmd_ctrl;
 
-	nand_release(jz_mtd);
+	if (pdata && gpio_is_valid(pdata->busy_gpio))
+		chip->dev_ready = jz_nand_dev_ready;
+
+	chip->IO_ADDR_R = JZ_NAND_DATA_ADDR;
+	chip->IO_ADDR_W = JZ_NAND_DATA_ADDR;
+
+	nand->pdata = pdata;
+	platform_set_drvdata(pdev, nand);
+
+	ret = nand_scan_ident(mtd, 1);
+	if (ret) {
+		dev_err(&pdev->dev,  "Failed to scan nand\n");
+		goto err_gpio_free;
+	}
+
+	if (pdata && pdata->ident_callback) {
+		pdata->ident_callback(pdev, chip, &pdata->partitions, &pdata->num_partitions);
+	}
+
+	ret = nand_scan_tail(mtd);
+	if (ret) {
+		dev_err(&pdev->dev,  "Failed to scan nand\n");
+		goto err_gpio_free;
+	}
 
 #ifdef CONFIG_MTD_PARTITIONS
-	if (jz_parts)
-		kfree(jz_parts);
+#ifdef CONFIG_MTD_CMDLINE_PARTS
+	num_partitions = parse_mtd_partitions(mtd, part_probes,
+						&partition_info, 0);
 #endif
+	if (num_partitions <= 0 && pdata) {
+		num_partitions = pdata->num_partitions;
+		partition_info = pdata->partitions;
+	}
+
+	if (num_partitions > 0)
+		ret = add_mtd_partitions(mtd, partition_info, num_partitions);
+	else
+#endif
+	ret = add_mtd_device(mtd);
+
+	if (ret) {
+		dev_err(&pdev->dev, "Failed to add mtd device\n");
+		goto err_nand_release;
+	}
+
+	dev_info(&pdev->dev, "Successfully registered JZ4740 NAND driver\n");
+
+	return 0;
+err_nand_release:
+	nand_release(&nand->mtd);
+err_gpio_free:
 	platform_set_drvdata(pdev, NULL);
-
-	/* Free the MTD device structure */
-	kfree (jz_mtd);
-
-	return 0;
+	gpio_free(pdata->busy_gpio);
+err_iounmap:
+	iounmap(nand->base);
+err_release_mem:
+	release_mem_region(nand->mem->start, resource_size(nand->mem));
+err_free:
+	kfree(nand);
+	return ret;
 }
 
-#ifdef CONFIG_PM
-static int jz4740_nand_suspend(struct platform_device *dev, pm_message_t pm)
+static void __devexit jz_nand_remove(struct platform_device *pdev)
 {
-	return 0;
+	struct jz_nand *nand = platform_get_drvdata(pdev);
+
+	nand_release(&nand->mtd);
+
+	iounmap(nand->base);
+
+	release_mem_region(nand->mem->start, resource_size(nand->mem));
+
+	platform_set_drvdata(pdev, NULL);
+	kfree(nand);
 }
 
-static int jz4740_nand_resume(struct platform_device *dev)
-{
-	return 0;
-}
-#else
-#define jz4740_nand_suspend NULL
-#define jz4740_nand_resume NULL
-#endif
-
-static struct platform_driver jz4740_nand_driver = {
-	.probe		= jz4740_nand_probe,
-	.remove		= __devexit_p(jz4740_nand_remove),
-	.suspend	= jz4740_nand_suspend,
-	.resume		= jz4740_nand_resume,
-	.driver		= {
-		.name	= "jz4740-nand",
-		.owner	= THIS_MODULE,
+struct platform_driver jz_nand_driver = {
+	.probe = jz_nand_probe,
+	.remove = __devexit_p(jz_nand_probe),
+	.driver = {
+		.name = "jz4740-nand",
+		.owner = THIS_MODULE,
 	},
 };
 
-
-static int __init jz4740_nand_init(void)
+static int __init jz_nand_init(void)
 {
-	return platform_driver_register(&jz4740_nand_driver);
+	return platform_driver_register(&jz_nand_driver);
 }
+module_init(jz_nand_init);
 
-static void __exit jz4740_nand_exit(void)
+static void __exit jz_nand_exit(void)
 {
-	platform_driver_unregister(&jz4740_nand_driver);
+	platform_driver_unregister(&jz_nand_driver);
 }
+module_exit(jz_nand_exit);
 
-module_init(jz4740_nand_init);
-module_exit(jz4740_nand_exit);
-MODULE_AUTHOR("Yauhen Kharuzhy <jekhor@gmail.com>");
 MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Lars-Peter Clausen <lars@metafoo.de>");
+MODULE_DESCRIPTION("NAND controller driver for JZ4720/JZ4740 SoC");
+MODULE_ALIAS("platform:jz4740-nand");
+MODULE_ALIAS("platform:jz4720-nand");
