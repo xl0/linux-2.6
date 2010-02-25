@@ -345,12 +345,6 @@ static struct jz_nand_platform_data n516_nand_pdata = {
 	.busy_gpio = 94,
 };
 
-
-static struct platform_device n516_usb_power = {
-	.name		= "n516-usb-power",
-	.id		= -1,
-};
-
 static struct platform_device *n516_devices[] __initdata = {
 	&jz4740_nand_device,
 	&n516_leds_device,
@@ -360,7 +354,6 @@ static struct platform_device *n516_devices[] __initdata = {
 	&jz4740_rtc_device,
 	&jz4740_usb_gdt_device,
 	&jz4740_i2c_device,
-	&n516_usb_power,
 };
 
 extern int jz_gpiolib_init(void);
