@@ -116,6 +116,7 @@ struct jzfb {
 	void __iomem *base;
 	struct resource *mem;
 	struct jz4740_fb_platform_data *pdata;
+	unsigned int used_data_pins;
 
 	void *devmem;
 	size_t devmem_size;
@@ -142,10 +143,14 @@ static struct fb_fix_screeninfo jzfb_fix __devinitdata = {
 	.accel =	FB_ACCEL_NONE,
 };
 
-const static struct jz_gpio_bulk_request jz_lcd_pins[] = {
+const static struct jz_gpio_bulk_request jz_lcd_control_pins[] = {
 	JZ_GPIO_BULK_PIN(LCD_PCLK),
 	JZ_GPIO_BULK_PIN(LCD_HSYNC),
 	JZ_GPIO_BULK_PIN(LCD_VSYNC),
+	JZ_GPIO_BULK_PIN(LCD_DE),
+};
+
+const static struct jz_gpio_bulk_request jz_lcd_data_pins[] = {
 	JZ_GPIO_BULK_PIN(LCD_DATA0),
 	JZ_GPIO_BULK_PIN(LCD_DATA1),
 	JZ_GPIO_BULK_PIN(LCD_DATA2),
@@ -154,11 +159,41 @@ const static struct jz_gpio_bulk_request jz_lcd_pins[] = {
 	JZ_GPIO_BULK_PIN(LCD_DATA5),
 	JZ_GPIO_BULK_PIN(LCD_DATA6),
 	JZ_GPIO_BULK_PIN(LCD_DATA7),
+	JZ_GPIO_BULK_PIN(LCD_DATA8),
+	JZ_GPIO_BULK_PIN(LCD_DATA9),
+	JZ_GPIO_BULK_PIN(LCD_DATA10),
+	JZ_GPIO_BULK_PIN(LCD_DATA11),
+	JZ_GPIO_BULK_PIN(LCD_DATA12),
+	JZ_GPIO_BULK_PIN(LCD_DATA13),
+	JZ_GPIO_BULK_PIN(LCD_DATA14),
+	JZ_GPIO_BULK_PIN(LCD_DATA15),
+	JZ_GPIO_BULK_PIN(LCD_DATA16),
+	JZ_GPIO_BULK_PIN(LCD_DATA17),
 };
 
+static void dump_regs(struct jzfb *jzfb)
+{
+	printk("JZ_REG_LCD_CFG:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_CFG));
+	printk("JZ_REG_LCD_VSYNC:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_VSYNC));
+	printk("JZ_REG_LCD_HSYNC:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_HSYNC));
+	printk("JZ_REG_LCD_VAT:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_VAT));
+	printk("JZ_REG_LCD_DAH:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_DAH));
+	printk("JZ_REG_LCD_DAV:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_DAV));
+	printk("JZ_REG_LCD_PS:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_PS));
+	printk("JZ_REG_LCD_CLS:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_CLS));
+	printk("JZ_REG_LCD_SPL:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_SPL));
+	printk("JZ_REG_LCD_REV:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_REV));
+	printk("JZ_REG_LCD_CTRL:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_CTRL));
+	printk("JZ_REG_LCD_STATE:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_STATE));
+	printk("JZ_REG_LCD_IID:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_IID));
+	printk("JZ_REG_LCD_DA0:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_DA0));
+	printk("JZ_REG_LCD_SA0:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_SA0));
+	printk("JZ_REG_LCD_FID0:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_FID0));
+	printk("JZ_REG_LCD_CMD0:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_CMD0));
+}
 
-int jzfb_setcolreg(unsigned regno, unsigned red, unsigned green, unsigned blue,
-			unsigned transp, struct fb_info *fb)
+static int jzfb_setcolreg(unsigned regno, unsigned red, unsigned green,
+		unsigned blue, unsigned transp, struct fb_info *fb)
 {
 	((uint32_t*)fb->pseudo_palette)[regno] = red << 16 | green << 8 | blue;
 	return 0;
@@ -312,7 +347,8 @@ static int jzfb_blank(int blank_mode, struct fb_info *info)
 		if (jzfb->is_enabled)
 			return 0;
 
-		jz_gpio_bulk_resume(jz_lcd_pins, ARRAY_SIZE(jz_lcd_pins));
+		jz_gpio_bulk_resume(jz_lcd_control_pins, ARRAY_SIZE(jz_lcd_control_pins));
+		jz_gpio_bulk_resume(jz_lcd_data_pins, jzfb->used_data_pins);
 		clk_enable(jzfb->ldclk);
 		clk_enable(jzfb->lpclk);
 
@@ -338,7 +374,8 @@ static int jzfb_blank(int blank_mode, struct fb_info *info)
 
 		clk_disable(jzfb->lpclk);
 		clk_disable(jzfb->ldclk);
-		jz_gpio_bulk_suspend(jz_lcd_pins, ARRAY_SIZE(jz_lcd_pins));
+		jz_gpio_bulk_suspend(jz_lcd_control_pins, ARRAY_SIZE(jz_lcd_control_pins));
+		jz_gpio_bulk_suspend(jz_lcd_data_pins, jzfb->used_data_pins);
 		jzfb->is_enabled = 0;
 		break;
 	}
@@ -514,7 +551,17 @@ static int __devinit jzfb_probe(struct platform_device *pdev)
 	jzfb_set_par(fb);
 	writel(jzfb->framedesc->next, jzfb->base + JZ_REG_LCD_DA0);
 
-	jz_gpio_bulk_request(jz_lcd_pins, ARRAY_SIZE(jz_lcd_pins));
+	jz_gpio_bulk_request(jz_lcd_control_pins, ARRAY_SIZE(jz_lcd_control_pins));
+
+	if (pdata->bpp <= 18)
+		jzfb->used_data_pins = pdata->bpp;
+	else
+		jzfb->used_data_pins = 8;
+
+	jz_gpio_bulk_request(jz_lcd_data_pins, jzfb->used_data_pins);
+
+
+	dump_regs(jzfb);
 
 	ret = register_framebuffer(fb);
 	if (ret) {
@@ -538,7 +585,10 @@ static int __devexit jzfb_remove(struct platform_device *pdev)
 {
 	struct jzfb *jzfb = platform_get_drvdata(pdev);
 
-	jz_gpio_bulk_free(jz_lcd_pins, ARRAY_SIZE(jz_lcd_pins));
+	jz_gpio_bulk_free(jz_lcd_control_pins, ARRAY_SIZE(jz_lcd_control_pins));
+
+	jz_gpio_bulk_free(jz_lcd_data_pins, jzfb->used_data_pins);
+
 	iounmap(jzfb->base);
 	release_mem_region(jzfb->mem->start, resource_size(jzfb->mem));
 	jzfb_free_devmem(jzfb);
