@@ -549,6 +549,7 @@ static int __devinit jzfb_probe(struct platform_device *pdev)
 	fb_alloc_cmap(&fb->cmap, 256, 0);
 
 	jzfb_set_par(fb);
+	writel(0, jzfb->base + JZ_REG_LCD_STATE);
 	writel(jzfb->framedesc->next, jzfb->base + JZ_REG_LCD_DA0);
 
 	jz_gpio_bulk_request(jz_lcd_control_pins, ARRAY_SIZE(jz_lcd_control_pins));
