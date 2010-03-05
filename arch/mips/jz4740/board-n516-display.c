@@ -8,8 +8,6 @@
  * more details.
  */
 
-#define DEBUG 
-
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/errno.h>
@@ -45,7 +43,7 @@ static struct fb_videomode n516_fb_modes[] = {
 		.vsync_len	= 23,
 		.right_margin	= 31,
 		.left_margin	= 5,
-		.upper_margin	= 2,
+		.upper_margin	= 1,
 		.lower_margin	= 1,
 	},
 };
@@ -71,7 +69,7 @@ static int n516_init_gpio_regs(struct metronomefb_par *par)
 	gpio_request(ERR_GPIO_PIN, "Metronome ERR");
 	gpio_direction_input(ERR_GPIO_PIN);
 	gpio_request(GPIO_DISP_OFF_N, "Metronome off");
-	gpio_direction_output(GPIO_DISP_OFF_N, 0);
+	gpio_direction_output(GPIO_DISP_OFF_N, 1);
 
 	return 0;
 }
@@ -79,7 +77,9 @@ static int n516_init_gpio_regs(struct metronomefb_par *par)
 static int n516_share_video_mem(struct fb_info *info)
 {
 	dev_dbg(&n516_device->dev, "ENTER %s\n", __func__);
-	dev_dbg(&n516_device->dev, "%s, info->var.xres = %u, info->var.yres = %u\n", __func__, info->var.xres, info->var.yres);
+	dev_dbg(&n516_device->dev,
+			"%s, info->var.xres = %u, info->var.yres = %u\n",
+			__func__, info->var.xres, info->var.yres);
 	/* rough check if this is our desired fb and not something else */
 	if ((info->var.xres != n516_fb_pdata.modes[0].xres)
 		|| (info->var.yres != n516_fb_pdata.modes[0].yres))
@@ -209,10 +209,10 @@ static void n516_power_ctl(struct metronomefb_par *par, int cmd)
 	switch (cmd) {
 	case METRONOME_POWER_OFF:
 		gpio_set_value(GPIO_DISP_OFF_N, 1);
-//FIXME		__lcd_clr_ena(); /* Quick Disable */
+		fb_blank(n516_board.host_fbinfo, FB_BLANK_NORMAL);
 		break;
 	case METRONOME_POWER_ON:
-//FIXME		__lcd_set_ena();
+		fb_blank(n516_board.host_fbinfo, FB_BLANK_UNBLANK);
 		gpio_set_value(GPIO_DISP_OFF_N, 0);
 		break;
 	}
@@ -245,25 +245,21 @@ static int n516_setup_irq(struct fb_info *info)
 
 static void n516_set_rst(struct metronomefb_par *par, int state)
 {
-	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n", __func__, gpio_get_value(RDY_GPIO_PIN));
-	if (state)
-		gpio_set_value(RST_GPIO_PIN, 1);
-	else
-		gpio_set_value(RST_GPIO_PIN, 0);
+	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n",
+			__func__, gpio_get_value(RDY_GPIO_PIN));
+	gpio_set_value(RST_GPIO_PIN, !!state);
 }
 
 static void n516_set_stdby(struct metronomefb_par *par, int state)
 {
-	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n", __func__, gpio_get_value(RDY_GPIO_PIN));
-	if (state)
-		gpio_set_value(STDBY_GPIO_PIN, 1);
-	else
-		gpio_set_value(STDBY_GPIO_PIN, 0);
+	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n",
+			__func__, gpio_get_value(RDY_GPIO_PIN));
+	gpio_set_value(STDBY_GPIO_PIN, !!state);
 }
 
 static int n516_wait_event(struct metronomefb_par *par)
 {
-	unsigned long timeout = jiffies + HZ/20;
+	unsigned long timeout = jiffies + HZ / 20;
 
 	dev_dbg(&n516_device->dev, "ENTER1 %s, RDY=%d\n",
 			__func__, gpio_get_value(RDY_GPIO_PIN));
@@ -278,7 +274,7 @@ static int n516_wait_event(struct metronomefb_par *par)
 
 static int n516_wait_event_intr(struct metronomefb_par *par)
 {
-	unsigned long timeout = jiffies + HZ/20;
+	unsigned long timeout = jiffies + HZ / 20;
 
 	dev_dbg(&n516_device->dev, "ENTER1 %s, RDY=%d\n",
 			__func__, gpio_get_value(RDY_GPIO_PIN));
