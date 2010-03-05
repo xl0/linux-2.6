@@ -171,27 +171,6 @@ const static struct jz_gpio_bulk_request jz_lcd_data_pins[] = {
 	JZ_GPIO_BULK_PIN(LCD_DATA17),
 };
 
-static void dump_regs(struct jzfb *jzfb)
-{
-	printk("JZ_REG_LCD_CFG:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_CFG));
-	printk("JZ_REG_LCD_VSYNC:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_VSYNC));
-	printk("JZ_REG_LCD_HSYNC:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_HSYNC));
-	printk("JZ_REG_LCD_VAT:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_VAT));
-	printk("JZ_REG_LCD_DAH:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_DAH));
-	printk("JZ_REG_LCD_DAV:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_DAV));
-	printk("JZ_REG_LCD_PS:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_PS));
-	printk("JZ_REG_LCD_CLS:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_CLS));
-	printk("JZ_REG_LCD_SPL:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_SPL));
-	printk("JZ_REG_LCD_REV:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_REV));
-	printk("JZ_REG_LCD_CTRL:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_CTRL));
-	printk("JZ_REG_LCD_STATE:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_STATE));
-	printk("JZ_REG_LCD_IID:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_IID));
-	printk("JZ_REG_LCD_DA0:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_DA0));
-	printk("JZ_REG_LCD_SA0:		0x%08x\n", readl(jzfb->base + JZ_REG_LCD_SA0));
-	printk("JZ_REG_LCD_FID0:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_FID0));
-	printk("JZ_REG_LCD_CMD0:	0x%08x\n", readl(jzfb->base + JZ_REG_LCD_CMD0));
-}
-
 static int jzfb_setcolreg(unsigned regno, unsigned red, unsigned green,
 		unsigned blue, unsigned transp, struct fb_info *fb)
 {
@@ -560,9 +539,6 @@ static int __devinit jzfb_probe(struct platform_device *pdev)
 		jzfb->used_data_pins = 8;
 
 	jz_gpio_bulk_request(jz_lcd_data_pins, jzfb->used_data_pins);
-
-
-	dump_regs(jzfb);
 
 	ret = register_framebuffer(fb);
 	if (ret) {
