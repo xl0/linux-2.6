@@ -41,22 +41,12 @@
 #include <asm/mach-jz4740/clock.h>
 #include <asm/mach-jz4740/serial.h>
 
+#include "clock.h"
+
 extern char *__init prom_getcmdline(void);
-extern void __init jz_board_setup(void);
 extern void jz_restart(char *);
 extern void jz_halt(void);
 extern void jz_power_off(void);
-extern void jz_time_init(void);
-
-static void __init soc_cpm_setup(void)
-{
-	/* Enable CKO to external memory */
-	__cpm_enable_cko();
-
-	/* CPU enters IDLE mode when executing 'wait' instruction */
-	__cpm_idle_mode();
-}
-
 
 static void __init jz_serial_setup(void)
 {
@@ -67,7 +57,7 @@ static void __init jz_serial_setup(void)
 	s.flags = UPF_BOOT_AUTOCONF | UPF_SKIP_TEST;
 	s.iotype = SERIAL_IO_MEM;
 	s.regshift = 2;
-	s.uartclk = JZ_EXTAL;
+	s.uartclk = jz4740_clock_bdata.ext_rate;
 
 	s.line = 0;
 	s.membase = (u8 *)UART0_BASE;
@@ -102,7 +92,6 @@ void __init plat_mem_setup(void)
 	_machine_restart = jz_restart;
 	_machine_halt = jz_halt;
 	pm_power_off = jz_power_off;
-	soc_cpm_setup();
 	jz_serial_setup();
 }
 
