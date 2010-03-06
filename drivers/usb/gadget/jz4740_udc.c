@@ -32,6 +32,7 @@
 #include <linux/proc_fs.h>
 #include <linux/usb.h>
 #include <linux/usb/gadget.h>
+#include <linux/clk.h>
 
 #include <asm/byteorder.h>
 #include <asm/io.h>
@@ -158,11 +159,6 @@
 #ifndef DEBUG_SETUP
 # define DEBUG_SETUP(fmt,args...) do {} while(0)
 #endif
-
-static unsigned int udc_debug = 0; /* 0: normal mode, 1: test udc cable type mode */
-
-module_param(udc_debug, int, 0);
-MODULE_PARM_DESC(udc_debug, "test udc cable or power type");
 
 static unsigned int use_dma = 0;   /* 1: use DMA, 0: use PIO */
 
@@ -345,11 +341,7 @@ static void udc_disable(struct jz4740_udc *dev)
 	usb_clearb(dev, JZ_REG_UDC_POWER, USB_POWER_SOFTCONN);
 
 	/* Disable the USB PHY */
-#ifdef CONFIG_SOC_JZ4740
-	REG_CPM_SCR &= ~CPM_SCR_USBPHY_ENABLE;
-#elif defined(CONFIG_SOC_JZ4750) || defined(CONFIG_SOC_JZ4750D)
-	REG_CPM_OPCR &= ~CPM_OPCR_UDCPHY_ENABLE;
-#endif
+	clk_disable(dev->clk);
 
 	dev->ep0state = WAIT_FOR_SETUP;
 	dev->gadget.speed = USB_SPEED_UNKNOWN;
@@ -410,14 +402,10 @@ static void udc_enable(struct jz4740_udc *dev)
 	 * there are no actions on the USB bus.
 	 * UDC still works during this bit was set.
 	 */
-	__cpm_stop_udc();
+	jz4740_clock_udc_enable_auto_suspend();
 
 	/* Enable the USB PHY */
-#ifdef CONFIG_SOC_JZ4740
-	REG_CPM_SCR |= CPM_SCR_USBPHY_ENABLE;
-#elif defined(CONFIG_SOC_JZ4750) || defined(CONFIG_SOC_JZ4750D)
-	REG_CPM_OPCR |= CPM_OPCR_UDCPHY_ENABLE;
-#endif
+	clk_enable(dev->clk);
 
 	/* Disable interrupts */
 /*	usb_writew(dev, JZ_REG_UDC_INTRINE, 0);
@@ -2159,7 +2147,6 @@ static int jz4740_udc_wakeup(struct usb_gadget *_gadget)
 static int jz4740_udc_pullup(struct usb_gadget *_gadget, int on)
 {
 	struct jz4740_udc *udc = gadget_to_udc(_gadget);
-
 	unsigned long flags;
 
 	local_irq_save(flags);
@@ -2176,6 +2163,7 @@ static int jz4740_udc_pullup(struct usb_gadget *_gadget, int on)
 
 	return 0;
 }
+
 
 static const struct usb_gadget_ops jz4740_udc_ops = {
 	.get_frame = jz4740_udc_get_frame,
@@ -2302,8 +2290,15 @@ static int jz4740_udc_probe(struct platform_device *pdev)
 	dev->gadget.dev.release = gadget_release;
 
 	ret = device_register(&dev->gadget.dev);
-        if (ret)
+	if (ret)
 		return ret;
+
+	dev->clk = clk_get(&pdev->dev, "udc");
+	if (IS_ERR(dev->clk)) {
+		ret = PTR_ERR(dev->clk);
+		dev_err(&pdev->dev, "Failed to get udc clock: %d\n", ret);
+		goto err_device_unregister;
+	}
 
 	platform_set_drvdata(pdev, dev);
 
@@ -2312,7 +2307,7 @@ static int jz4740_udc_probe(struct platform_device *pdev)
 	if (!dev->mem) {
 		ret = -ENOENT;
 		dev_err(&pdev->dev, "Failed to get mmio memory resource\n");
-		goto err_device_unregister;
+		goto err_clk_put;
 	}
 
 	dev->mem = request_mem_region(dev->mem->start, resource_size(dev->mem), pdev->name);
@@ -2349,6 +2344,8 @@ err_iounmap:
 	iounmap(dev->base);
 err_release_mem_region:
 	release_mem_region(dev->mem->start, resource_size(dev->mem));
+err_clk_put:
+	clk_put(dev->clk);
 err_device_unregister:
 	device_unregister(&dev->gadget.dev);
 	platform_set_drvdata(pdev, NULL);
@@ -2366,13 +2363,11 @@ static int jz4740_udc_remove(struct platform_device *pdev)
 		return -EBUSY;
 
 	udc_disable(dev);
-#ifdef	UDC_PROC_FILE
-	remove_proc_entry(proc_node_name, NULL);
-#endif
 
 	free_irq(dev->irq, dev);
 	iounmap(dev->base);
 	release_mem_region(dev->mem->start, resource_size(dev->mem));
+	clk_put(dev->clk);
 
 	platform_set_drvdata(pdev, NULL);
 	device_unregister(&dev->gadget.dev);
@@ -2381,12 +2376,48 @@ static int jz4740_udc_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#ifdef CONFIG_PM
+
+static int jz4740_udc_suspend(struct device *dev)
+{
+	struct jz4740_udc *udc = dev_get_drvdata(dev);
+
+	if (udc->state == UDC_STATE_ENABLE)
+		udc_disable(udc);
+
+	return 0;
+}
+
+static int jz4740_udc_resume(struct device *dev)
+{
+	struct jz4740_udc *udc = dev_get_drvdata(dev);
+
+	if (udc->state == UDC_STATE_ENABLE)
+		udc_enable(udc);
+
+	return 0;
+}
+
+static struct dev_pm_ops jz4740_udc_pm_ops = {
+	.suspend = jz4740_udc_suspend,
+	.resume = jz4740_udc_resume,
+};
+
+#define JZ4740_UDC_PM_OPS (&jz4740_udc_pm_ops)
+
+#else
+
+#define JZ4740_UDC_PM_OPS NULL
+
+#endif
+
 static struct platform_driver udc_driver = {
 	.probe		= jz4740_udc_probe,
 	.remove		= jz4740_udc_remove,
 	.driver		= {
 		.name	= "jz-udc",
 		.owner	= THIS_MODULE,
+		.pm		= JZ4740_UDC_PM_OPS,
 	},
 };
 
@@ -2396,13 +2427,12 @@ static int __init udc_init (void)
 {
 	return platform_driver_register(&udc_driver);
 }
+module_init(udc_init);
 
 static void __exit udc_exit (void)
 {
 	platform_driver_unregister(&udc_driver);
 }
-
-module_init(udc_init);
 module_exit(udc_exit);
 
 MODULE_DESCRIPTION("JZ4740 USB Device Controller");
