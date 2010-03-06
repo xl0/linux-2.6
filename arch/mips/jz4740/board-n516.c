@@ -32,9 +32,9 @@
 
 static long n516_panic_blink(long time)
 {
-	gpio_set_value(GPIO_LED_EN, 1);
+	gpio_set_value(GPIO_LED_ENABLE, 1);
 	mdelay(200);
-	gpio_set_value(GPIO_LED_EN, 0);
+	gpio_set_value(GPIO_LED_ENABLE, 0);
 	mdelay(200);
 
 	return 400;
@@ -66,7 +66,7 @@ static struct jz4740_mmc_platform_data n516_mmc_pdata = {
 static struct gpio_led n516_leds[] = {
 	{
 		.name = "n516:blue:power",
-		.gpio = GPIO_LED_EN,
+		.gpio = GPIO_LED_ENABLE,
 		.default_state = LEDS_GPIO_DEFSTATE_ON,
 		.default_trigger = "nand-disk",
 	}

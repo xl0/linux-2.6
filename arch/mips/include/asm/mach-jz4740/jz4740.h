@@ -21,12 +21,10 @@
 /*------------------------------------------------------------------
  * Platform definitions
  */
-#ifdef CONFIG_JZ4740_N516
-#include <asm/mach-jz4740/board-n516.h>
+
+#ifdef CONFIG_JZ4740_QI_LB60
+#include <asm/mach-jz4740/board-qi_lb60.h>
 #endif
-
-/* Add other platform definition here ... */
-
 
 /*------------------------------------------------------------------
  * Follows are related to platform definitions
