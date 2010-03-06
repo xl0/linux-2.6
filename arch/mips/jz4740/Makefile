@@ -7,17 +7,14 @@
 obj-y += prom.o irq.o time.o reset.o setup.o dma.o \
 	gpio.o clock.o platform.o
 
+obj-$(CONFIG_DEBUG_FS) += clock-debugfs.o
+
 # board specific support
 
 obj-$(CONFIG_JZ4740_N516)	+= board-n516.o
 obj-$(CONFIG_JZ4740_N516_DISPLAY)	+= board-n516-display.o
-obj-$(CONFIG_JZ4740_PAVO)	+= board-pavo.o
-obj-$(CONFIG_JZ4740_LEO)	+= board-leo.o
-obj-$(CONFIG_JZ4740_LYRA)	+= board-lyra.o
-obj-$(CONFIG_JZ4725_DIPPER)	+= board-dipper.o
-obj-$(CONFIG_JZ4720_VIRGO)	+= board-virgo.o
 
 # PM support
 
-obj-$(CONFIG_PM)         +=pm.o
+obj-$(CONFIG_PM)         += pm.o
 
