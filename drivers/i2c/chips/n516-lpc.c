@@ -41,33 +41,33 @@ MODULE_DEVICE_TABLE(i2c, n516_lpc_i2c_ids);
 
 static const unsigned short normal_i2c[] = {0x54, I2C_CLIENT_END};
 
-static const unsigned int keymap[][2] = {
-	{0x05, KEY_0},
-	{0x04, KEY_1},
-	{0x03, KEY_2},
-	{0x02, KEY_3},
-	{0x01, KEY_4},
-	{0x0b, KEY_5},
-	{0x0a, KEY_6},
-	{0x09, KEY_7},
-	{0x08, KEY_8},
-	{0x07, KEY_9},
-	{0x1a, KEY_PAGEUP},
-	{0x19, KEY_PAGEDOWN},
-	{0x17, KEY_LEFT},
-	{0x16, KEY_RIGHT},
-	{0x14, KEY_UP},
-	{0x15, KEY_DOWN},
-	{0x13, KEY_ENTER},
-	{0x11, KEY_SPACE},
-	{0x0e, KEY_MENU},
-	{0x10, KEY_DIRECTION},
-	{0x0f, KEY_SEARCH},
-	{0x0d, KEY_PLAYPAUSE},
-	{0x1d, KEY_ESC},
-	{0x1c, KEY_POWER},
-	{0x1e, KEY_SLEEP},
-	{0x1f, KEY_WAKEUP},
+static const unsigned int n516_lpc_keymap[] = {
+	[0x01] = KEY_4,
+	[0x02] = KEY_3,
+	[0x03] = KEY_2,
+	[0x04] = KEY_1,
+	[0x05] = KEY_0,
+	[0x07] = KEY_9,
+	[0x08] = KEY_8,
+	[0x09] = KEY_7,
+	[0x0a] = KEY_6,
+	[0x0b] = KEY_5,
+	[0x0d] = KEY_PLAYPAUSE,
+	[0x0e] = KEY_MENU,
+	[0x0f] = KEY_SEARCH,
+	[0x10] = KEY_DIRECTION,
+	[0x11] = KEY_SPACE,
+	[0x13] = KEY_ENTER,
+	[0x14] = KEY_UP,
+	[0x15] = KEY_DOWN,
+	[0x16] = KEY_RIGHT,
+	[0x17] = KEY_LEFT,
+	[0x19] = KEY_PAGEDOWN,
+	[0x1a] = KEY_PAGEUP,
+	[0x1c] = KEY_POWER,
+	[0x1d] = KEY_ESC,
+	[0x1e] = KEY_SLEEP,
+	[0x1f] = KEY_WAKEUP,
 };
 
 static const unsigned int batt_charge[] = {0, 7, 20, 45, 65, 80, 100};
@@ -162,7 +162,6 @@ static void n516_key_event(struct n516_lpc_chip *chip, unsigned char keycode)
 {
 	struct i2c_client *client = chip->i2c_client;
 	bool long_press = false;
-	int i;
 
 	if (keycode & 0x40) {
 		keycode &= ~0x40;
@@ -171,19 +170,19 @@ static void n516_key_event(struct n516_lpc_chip *chip, unsigned char keycode)
 
 	dev_dbg(&client->dev, "keycode: 0x%02x, long_press: 0x%02x\n", keycode, (unsigned int)long_press);
 
-	for (i = 0; i < ARRAY_SIZE(keymap); i++) {
-		if (keycode == keymap[i][0]) {
-			if (long_press)
-				input_report_key(chip->input, KEY_LEFTALT, 1);
-			input_report_key(chip->input, keymap[i][1], 1);
-			input_sync(chip->input);
-			input_report_key(chip->input, keymap[i][1], 0);
-			if (long_press)
-				input_report_key(chip->input, KEY_LEFTALT, 0);
-			input_sync(chip->input);
-			break;
-		}
-	}
+	if (keycode >= ARRAY_SIZE(n516_lpc_keymap) || n516_lpc_keymap[keycode] == 0)
+		return;
+
+	if (long_press)
+		input_report_key(chip->input, KEY_LEFTALT, 1);
+
+	input_report_key(chip->input, n516_lpc_keymap[keycode], 1);
+	input_sync(chip->input);
+	input_report_key(chip->input, n516_lpc_keymap[keycode], 0);
+
+	if (long_press)
+		input_report_key(chip->input, KEY_LEFTALT, 0);
+	input_sync(chip->input);
 }
 
 
@@ -214,7 +213,7 @@ static irqreturn_t n516_lpc_irq_thread(int irq, void *devid)
 
 	dev_dbg(&client->dev, "msg: 0x%02x\n", raw_msg);
 
-	if ((raw_msg & 0x40) < 0x20) {
+	if ((raw_msg & 0x40) < ARRAY_SIZE(n516_lpc_keymap)) {
 		n516_key_event(chip, raw_msg);
 	} else if ((raw_msg >= 0x81) && (raw_msg <= 0x87)) {
 		n516_battery_event(chip, raw_msg - 0x81);
@@ -323,8 +322,8 @@ static int __devinit n516_lpc_probe(struct i2c_client *client, const struct i2c_
 
 	__set_bit(EV_KEY, input->evbit);
 
-	for (i = 0; i < ARRAY_SIZE(keymap); i++)
-		__set_bit(keymap[i][1], input->keybit);
+	for (i = 0; i < ARRAY_SIZE(n516_lpc_keymap); i++)
+		__set_bit(n516_lpc_keymap[i], input->keybit);
 
 	__set_bit(KEY_LEFTALT, input->keybit);
 
