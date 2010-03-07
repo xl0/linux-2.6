@@ -11,7 +11,6 @@
 #include <linux/delay.h>
 #include <linux/platform_device.h>
 #include <linux/input.h>
-#include <linux/workqueue.h>
 #include <linux/power_supply.h>
 #include <linux/suspend.h>
 
@@ -26,7 +25,6 @@ module_param(batt_level, int, 0);
 
 struct n516_lpc_chip {
 	struct i2c_client	*i2c_client;
-	struct work_struct	work;
 	struct input_dev	*input;
 	unsigned int		battery_level;
 	unsigned int		suspending:1, can_sleep:1;
@@ -160,64 +158,72 @@ static irqreturn_t n516_bat_charge_irq(int irq, void *dev)
 	return IRQ_HANDLED;
 }
 
-static void n516_lpc_read_keys(struct work_struct *work)
+static void n516_key_event(struct n516_lpc_chip *chip, unsigned char keycode)
 {
-	struct n516_lpc_chip *chip = container_of(work, struct n516_lpc_chip, work);
+	struct i2c_client *client = chip->i2c_client;
+	bool long_press = false;
+	int i;
+
+	if (keycode & 0x40) {
+		keycode &= ~0x40;
+		long_press = true;
+	}
+
+	dev_dbg(&client->dev, "keycode: 0x%02x, long_press: 0x%02x\n", keycode, (unsigned int)long_press);
+
+	for (i = 0; i < ARRAY_SIZE(keymap); i++) {
+		if (keycode == keymap[i][0]) {
+			if (long_press)
+				input_report_key(chip->input, KEY_LEFTALT, 1);
+			input_report_key(chip->input, keymap[i][1], 1);
+			input_sync(chip->input);
+			input_report_key(chip->input, keymap[i][1], 0);
+			if (long_press)
+				input_report_key(chip->input, KEY_LEFTALT, 0);
+			input_sync(chip->input);
+			break;
+		}
+	}
+}
+
+
+static void n516_battery_event(struct n516_lpc_chip *chip, unsigned char battery_level)
+{
+	if (battery_level != chip->battery_level) {
+		chip->battery_level = battery_level;
+		power_supply_changed(&n516_battery);
+	}
+}
+
+static irqreturn_t n516_lpc_irq_thread(int irq, void *devid)
+{
+	struct n516_lpc_chip *chip = (struct n516_lpc_chip*)devid;
+	int ret;
 	unsigned char raw_msg;
 	struct i2c_client *client = chip->i2c_client;
-	struct i2c_msg msg = {client->addr, client->flags | I2C_M_RD, 1, &raw_msg}; 
-	int ret, i;
-	int long_press;
+	struct i2c_msg msg = {client->addr, client->flags | I2C_M_RD, 1, &raw_msg};
+
+	if (client->dev.power.status != DPM_ON)
+		return IRQ_HANDLED;
 
 	ret = i2c_transfer(client->adapter, &msg, 1);
 	if (ret != 1) {
-		dev_dbg(&client->dev, "I2C error\n");
-	} else {
-		dev_dbg(&client->dev, "msg: 0x%02x\n", raw_msg);
-		long_press = 0;
-		if (raw_msg & 0x40) {
-			long_press = 1;
-			raw_msg &= ~0x40;
-		}
-		dev_dbg(&client->dev, "msg1: 0x%02x, long_press: 0x%02x\n", raw_msg, long_press);
-		for (i = 0; i < ARRAY_SIZE(keymap); i++) {
-			if (raw_msg == keymap[i][0]) {
-				if (long_press)
-					input_report_key(chip->input, KEY_LEFTALT, 1);
-				input_report_key(chip->input, keymap[i][1], 1);
-				input_sync(chip->input);
-				input_report_key(chip->input, keymap[i][1], 0);
-				if (long_press)
-					input_report_key(chip->input, KEY_LEFTALT, 0);
-				input_sync(chip->input);
-				break;
-			}
-		}
-		if ((raw_msg >= 0x81) && (raw_msg <= 0x87)) {
-			unsigned int old_level = chip->battery_level;
-
-			chip->battery_level = raw_msg - 0x81;
-			if (old_level != chip->battery_level)
-				power_supply_changed(&n516_battery);
-		}
-		if (the_lpc->suspending)
-			the_lpc->can_sleep = 0;
-	}
-	enable_irq(gpio_to_irq(GPIO_LPC_INT));
-}
-
-static irqreturn_t n516_lpc_irq(int irq, void *dev_id)
-{
-	struct n516_lpc_chip *chip = dev_id;
-	struct device *dev = &chip->i2c_client->dev;
-
-	if (dev->power.status != DPM_ON)
+		dev_dbg(&client->dev, "I2C error: %d\n", ret);
 		return IRQ_HANDLED;
-
-	if (!work_pending(&chip->work)) {
-		disable_irq_nosync(irq);
-		schedule_work(&chip->work);
 	}
+
+	dev_dbg(&client->dev, "msg: 0x%02x\n", raw_msg);
+
+	if ((raw_msg & 0x40) < 0x20) {
+		n516_key_event(chip, raw_msg);
+	} else if ((raw_msg >= 0x81) && (raw_msg <= 0x87)) {
+		n516_battery_event(chip, raw_msg - 0x81);
+	} else {
+		dev_warn(&client->dev, "Unkown message: %x\n", raw_msg);
+	}
+
+	if (chip->suspending)
+		chip->can_sleep = 0;
 
 	return IRQ_HANDLED;
 }
@@ -290,7 +296,6 @@ static int __devinit n516_lpc_probe(struct i2c_client *client, const struct i2c_
 	else
 		chip->battery_level = 1;
 
-	INIT_WORK(&chip->work, n516_lpc_read_keys);
 	i2c_set_clientdata(client, chip);
 
 	ret = gpio_request(GPIO_LPC_INT, "LPC interrupt request");
@@ -343,8 +348,10 @@ static int __devinit n516_lpc_probe(struct i2c_client *client, const struct i2c_
 		goto err_bat_reg;
 	}
 
-	ret = request_irq(gpio_to_irq(GPIO_LPC_INT), n516_lpc_irq,
-			IRQF_TRIGGER_FALLING, "lpc", chip);
+	ret = request_threaded_irq(gpio_to_irq(GPIO_LPC_INT), NULL,
+					n516_lpc_irq_thread,
+					IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+					"lpc", chip);
 	if (ret) {
 		dev_err(&client->dev, "request_irq failed: %d\n", ret);
 		goto err_request_lpc_irq;
@@ -399,7 +406,6 @@ static int __devexit n516_lpc_remove(struct i2c_client *client)
 	pm_power_off = NULL;
 	free_irq(gpio_to_irq(GPIO_CHARG_STAT_N), &n516_battery);
 	free_irq(gpio_to_irq(GPIO_LPC_INT), chip);
-	flush_scheduled_work();
 	power_supply_unregister(&n516_battery);
 	input_unregister_device(chip->input);
 	gpio_free(GPIO_CHARG_STAT_N);
