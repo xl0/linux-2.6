@@ -365,6 +365,8 @@ static int __devinit n516_lpc_probe(struct i2c_client *client, const struct i2c_
 		goto err_reg_pm_notifier;
 	}
 
+	device_init_wakeup(&client->dev, 1);
+
 	return 0;
 
 	unregister_pm_notifier(&n516_lpc_notif_block);
@@ -414,13 +416,17 @@ static int n516_lpc_suspend(struct i2c_client *client, pm_message_t msg)
 	if (!the_lpc->can_sleep)
 		return -EBUSY;
 
-	disable_irq(gpio_to_irq(GPIO_LPC_INT));
+	if (device_may_wakeup(&client->dev))
+		enable_irq_wake(gpio_to_irq(GPIO_LPC_INT));
+
 	return 0;
 }
 
 static int n516_lpc_resume(struct i2c_client *client)
 {
-	enable_irq(gpio_to_irq(GPIO_LPC_INT));
+	if (device_may_wakeup(&client->dev))
+		disable_irq_wake(gpio_to_irq(GPIO_LPC_INT));
+
 	return 0;
 }
 #else
