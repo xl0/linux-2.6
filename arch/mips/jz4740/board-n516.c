@@ -25,6 +25,9 @@
 
 #include <linux/i2c.h>
 
+#include <linux/power_supply.h>
+#include <linux/power/gpio-charger.h>
+
 #include <asm/mach-jz4740/board-n516.h>
 #include <asm/mach-jz4740/platform.h>
 
@@ -107,6 +110,26 @@ static struct jz_nand_platform_data n516_nand_pdata = {
 	.busy_gpio = 94,
 };
 
+static char *n516_batteries[] = {
+	"n516_battery",
+};
+
+static struct gpio_charger_platform_data n516_charger_pdata = {
+	.name = "usb",
+	.type = POWER_SUPPLY_TYPE_USB,
+	.gpio = GPIO_USB_DETECT,
+	.gpio_active_low = 1,
+	.batteries = n516_batteries,
+	.num_batteries = ARRAY_SIZE(n516_batteries),
+};
+
+static struct platform_device n516_charger_device = {
+	.name = "gpio-charger",
+	.dev = {
+		.platform_data = &n516_charger_pdata,
+	},
+};
+
 static struct platform_device *n516_devices[] __initdata = {
 	&jz4740_nand_device,
 	&n516_leds_device,
@@ -116,6 +139,7 @@ static struct platform_device *n516_devices[] __initdata = {
 	&jz4740_rtc_device,
 	&jz4740_usb_gdt_device,
 	&jz4740_i2c_device,
+	&n516_charger_device,
 };
 
 struct jz4740_clock_board_data jz4740_clock_bdata = {
