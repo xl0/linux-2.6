@@ -157,13 +157,6 @@ static irqreturn_t n516_bat_charge_irq(int irq, void *dev)
 
 	power_supply_changed(psy);
 
-	if (n516_bat_charging())
-		set_irq_type(gpio_to_irq(GPIO_CHARG_STAT_N),
-				IRQ_TYPE_EDGE_RISING);
-	else
-		set_irq_type(gpio_to_irq(GPIO_CHARG_STAT_N),
-				IRQ_TYPE_EDGE_FALLING);
-
 	return IRQ_HANDLED;
 }
 
@@ -358,18 +351,12 @@ static int __devinit n516_lpc_probe(struct i2c_client *client, const struct i2c_
 	}
 
 	ret = request_irq(gpio_to_irq(GPIO_CHARG_STAT_N), n516_bat_charge_irq,
-				IRQF_TRIGGER_FALLING, "battery charging", &n516_battery);
+				IRQF_TRIGGER_FALLING | IRQF_TRIGGER_RISING,
+				"battery charging", &n516_battery);
 	if (ret) {
 		dev_err(&client->dev, "Unable to claim battery charging IRQ\n");
 		goto err_request_chrg_irq;
 	}
-
-	if (n516_bat_charging())
-		set_irq_type(gpio_to_irq(GPIO_CHARG_STAT_N),
-				IRQ_TYPE_EDGE_RISING);
-	else
-		set_irq_type(gpio_to_irq(GPIO_CHARG_STAT_N),
-				IRQ_TYPE_EDGE_FALLING);
 
 	pm_power_off = n516_lpc_power_off;
 	ret = register_pm_notifier(&n516_lpc_notif_block);
