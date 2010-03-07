@@ -1,278 +1,251 @@
 /*
- * n516.c  --  SoC audio for n516
+ * SoC audio for n516 eBook reader
  *
  * Copyright (C) 2009, Yauhen Kharuzhy <jekhor@gmail.com>
- *	OpenInkpot project
+ *     OpenInkpot project
+ * Copyright (C) 2010, Lars-Peter Clausen <lars@metafoo.de>
  *
- *  This program is free software; you can redistribute  it and/or modify it
- *  under  the terms of  the GNU General  Public License as published by the
- *  Free Software Foundation;  either version 2 of the  License, or (at your
- *  option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * You should have received a copy of the  GNU General Public License along
+ * with this program; if not, write  to the Free Software Foundation, Inc.,
+ * 675 Mass Ave, Cambridge, MA 02139, USA.
  *
  */
 
 #include <linux/module.h>
-#include <linux/moduleparam.h>
-#include <linux/timer.h>
 #include <linux/interrupt.h>
 #include <linux/platform_device.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/soc.h>
 #include <sound/soc-dapm.h>
-
-#include <asm/mach-jz4740/board-n516.h>
+#include <sound/jack.h>
+#include <linux/gpio.h>
+#include <linux/workqueue.h>
 
 #include "../codecs/jzcodec.h"
 #include "jz4740-pcm.h"
 #include "jz4740-i2s.h"
 
-#define N516_SPK_AUTO	0
-#define N516_SPK_OFF	1
-#define N516_SPK_ON	2
+#include <asm/mach-jz4740/board-n516.h>
 
- /* audio clock in Hz - rounded from 12.235MHz */
-#define N516_AUDIO_CLOCK 12288000
+enum {
+	N516_SPEAKER_AUTO = 0,
+	N516_SPEAKER_OFF = 1,
+	N516_SPEAKER_ON = 2,
+};
 
-static int n516_headphone_present;
-static int n516_spk_func;
-static int board_initialized = 0;
+static int n516_speaker_mode;
+static struct snd_soc_codec *n516_codec;
+static struct work_struct n516_headphone_work;
 
-/* in ms */
-#define HPLUG_DETECT_DELAY 50
-
-static struct timer_list n516_hplug_timer;
-
-static void n516_ext_control(struct snd_soc_codec *codec)
+static void n516_ext_control(void)
 {
-	switch (n516_spk_func) {
-	case N516_SPK_ON:
-		snd_soc_dapm_enable_pin(codec, "Ext Spk");
+	if (!n516_codec)
+		return;
+
+	switch (n516_speaker_mode) {
+	case N516_SPEAKER_ON:
+		snd_soc_dapm_enable_pin(n516_codec, "Speaker");
 		break;
-	case N516_SPK_OFF:
-		snd_soc_dapm_disable_pin(codec, "Ext Spk");
+	case N516_SPEAKER_OFF:
+		snd_soc_dapm_disable_pin(n516_codec, "Speaker");
 		break;
-	case N516_SPK_AUTO:
-		if (n516_headphone_present)
-			snd_soc_dapm_disable_pin(codec, "Ext Spk");
+	case N516_SPEAKER_AUTO:
+		if (snd_soc_dapm_get_pin_status(n516_codec, "Headphone"))
+			snd_soc_dapm_disable_pin(n516_codec, "Speaker");
 		else
-			snd_soc_dapm_enable_pin(codec, "Ext Spk");
+			snd_soc_dapm_enable_pin(n516_codec, "Speaker");
+		break;
+	default:
 		break;
 	}
 
-	if (n516_headphone_present)
-		snd_soc_dapm_enable_pin(codec, "Headphone Jack");
-	else
-		snd_soc_dapm_disable_pin(codec, "Headphone Jack");
-
 	/* signal a DAPM event */
-	snd_soc_dapm_sync(codec);
+	snd_soc_dapm_sync(n516_codec);
 }
 
-static int n516_startup(struct snd_pcm_substream *substream)
+static int n516_speaker_event(struct snd_soc_dapm_widget *widget,
+			struct snd_kcontrol *ctrl, int event)
 {
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_codec *codec = rtd->socdev->card->codec;
+	int on = !SND_SOC_DAPM_EVENT_OFF(event);
 
-	/* check the jack status at stream startup */
-	n516_ext_control(codec);
+	gpio_set_value(GPIO_SPEAKER_ENABLE, on);
+
 	return 0;
 }
 
-static void n516_shutdown(struct snd_pcm_substream *substream)
+static void n516_headphone_event_work(struct work_struct *work)
 {
-	/*struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	  struct snd_soc_codec *codec = rtd->socdev->codec;*/
-
-	return;
+	n516_ext_control();
 }
 
-static int n516_hw_params(struct snd_pcm_substream *substream,
-	struct snd_pcm_hw_params *params)
+static int n516_headphone_event(struct snd_soc_dapm_widget *widget,
+			struct snd_kcontrol *ctrl, int event)
 {
-	struct snd_soc_pcm_runtime *rtd = substream->private_data;
-	struct snd_soc_dai *codec_dai = rtd->dai->codec_dai;
-	struct snd_soc_dai *cpu_dai = rtd->dai->cpu_dai;
-	int ret = 0;
-
-	/* set codec DAI configuration */
-	ret = codec_dai->ops->set_fmt(codec_dai, SND_SOC_DAIFMT_I2S |
-		SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBS_CFS);
-	if (ret < 0)
-		return ret;
-
-	/* set cpu DAI configuration */
-	ret = cpu_dai->ops->set_fmt(cpu_dai, SND_SOC_DAIFMT_I2S |
-		SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBS_CFS);
-	if (ret < 0)
-		return ret;
-
-	/* set the codec system clock for DAC and ADC */
-	ret = codec_dai->ops->set_sysclk(codec_dai, JZCODEC_SYSCLK, 111,
-		SND_SOC_CLOCK_IN);
-	if (ret < 0)
-		return ret;
-#if 0
-	/* set the I2S system clock as input (unused) */
-	ret = cpu_dai->ops->set_sysclk(cpu_dai, JZ4740_I2S_CLKSRC_PLL, 0,
-		SND_SOC_CLOCK_IN);
-	if (ret < 0)
-		return ret;
-#endif
+	/* We can't call soc_dapm_sync from a event handler */
+	if (event & (SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD))
+		schedule_work(&n516_headphone_work);
 	return 0;
 }
 
-static struct snd_soc_ops n516_ops = {
-	.startup = n516_startup,
-	.hw_params = n516_hw_params,
-	.shutdown = n516_shutdown,
+static const struct snd_soc_dapm_widget n516_widgets[] = {
+	SND_SOC_DAPM_SPK("Speaker", n516_speaker_event),
+	SND_SOC_DAPM_HP("Headphone", n516_headphone_event),
+	SND_SOC_DAPM_MIC("Mic", NULL),
 };
 
-static int n516_get_spk(struct snd_kcontrol *kcontrol,
+static const struct snd_soc_dapm_route n516_routes[] = {
+	{"Mic", NULL, "MIC"},
+	{"Speaker", NULL, "LOUT"},
+	{"Speaker", NULL, "ROUT"},
+	{"Headphone", NULL, "LOUT"},
+	{"Headphone", NULL, "ROUT"},
+};
+
+static const char *n516_speaker_modes[] = {"Auto", "Off", "On"};
+static const struct soc_enum n516_speaker_mode_enum =
+	SOC_ENUM_SINGLE_EXT(ARRAY_SIZE(n516_speaker_modes), n516_speaker_modes);
+
+static int n516_get_speaker_mode(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
-	ucontrol->value.integer.value[0] = n516_spk_func;
+	ucontrol->value.integer.value[0] = n516_speaker_mode;
 	return 0;
 }
 
-static int n516_set_spk(struct snd_kcontrol *kcontrol,
+static int n516_set_speaker_mode(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
 {
-	struct snd_soc_codec *codec =  snd_kcontrol_chip(kcontrol);
-
-	if (n516_spk_func == ucontrol->value.integer.value[0])
+	if (n516_speaker_mode == ucontrol->value.integer.value[0])
 		return 0;
 
-	n516_spk_func = ucontrol->value.integer.value[0];
-	n516_ext_control(codec);
+	n516_speaker_mode = ucontrol->value.integer.value[0];
+	n516_ext_control();
 	return 1;
 }
 
-static int n516_amp_event(struct snd_soc_dapm_widget *w, struct snd_kcontrol *c, int event)
-{
-	if (SND_SOC_DAPM_EVENT_ON(event))
-		gpio_set_value(GPIO_SPK_SHUD, 1);
-	else
-		gpio_set_value(GPIO_SPK_SHUD, 0);
-
-	return 0;
-}
-
-static void n516_hplug_timer_func(unsigned long data)
-{
-	struct snd_soc_codec *codec = (struct snd_soc_codec *)data;
-
-	n516_headphone_present = gpio_get_value(GPIO_HPHONE_PLUG);
-
-	if (n516_headphone_present)
-		set_irq_type(gpio_to_irq(GPIO_HPHONE_PLUG),
-				IRQ_TYPE_EDGE_FALLING);
-	else
-		set_irq_type(gpio_to_irq(GPIO_HPHONE_PLUG),
-				IRQ_TYPE_EDGE_RISING);
-
-	n516_ext_control(codec);
-}
-
-static irqreturn_t n516_hplug_irq(int irq, void *dev)
-{
-	if (board_initialized) {
-		mod_timer(&n516_hplug_timer, jiffies + msecs_to_jiffies(HPLUG_DETECT_DELAY));
-	}
-	return IRQ_HANDLED;
-}
-
-/* n516 machine dapm widgets */
-static const struct snd_soc_dapm_widget jzcodec_dapm_widgets[] = {
-	SND_SOC_DAPM_HP("Headphone Jack", NULL),
-	SND_SOC_DAPM_HP("Mic", NULL),
-	SND_SOC_DAPM_SPK("Ext Spk", n516_amp_event),
+static const struct snd_kcontrol_new n516_controls[] = {
+	SOC_ENUM_EXT("Speaker Function", n516_speaker_mode_enum,
+		n516_get_speaker_mode, n516_set_speaker_mode),
 };
 
-/* n516 machine audio map (connections to the codec pins) */
-static const struct snd_soc_dapm_route audio_map[] = {
+#define N516_DAIFMT (SND_SOC_DAIFMT_I2S | \
+			SND_SOC_DAIFMT_NB_NF | \
+			SND_SOC_DAIFMT_CBM_CFM)
 
-	/* headphone connected to LHPOUT1, RHPOUT1 */
-	{"Headphone Jack", NULL, "LHPOUT"},
-	{"Headphone Jack", NULL, "RHPOUT"},
-
-	/* speaker connected to LOUT, ROUT */
-	{"Ext Spk", NULL, "ROUT"},
-	{"Ext Spk", NULL, "LOUT"},
-
-	/* mic is connected to MICIN (via right channel of headphone jack) */
-	{"MICIN", NULL, "Mic"},
-};
-
-static const char *spk_function[] = {"Auto", "Off", "On"};
-static const struct soc_enum n516_enum[] = {
-	SOC_ENUM_SINGLE_EXT(3, spk_function),
-};
-
-static const struct snd_kcontrol_new jzcodec_n516_controls[] = {
-	SOC_ENUM_EXT("Speaker Function", n516_enum[0], n516_get_spk,
-		n516_set_spk),
-};
-
-/*
- * n516 for a jzcodec as connected on jz4740 Device
- */
-static int n516_jzcodec_init(struct snd_soc_codec *codec)
+static int n516_codec_init(struct snd_soc_codec *codec)
 {
-	int i, err;
+	int ret;
+	struct snd_soc_dai *cpu_dai = codec->socdev->card->dai_link->cpu_dai;
+	struct snd_soc_dai *codec_dai = codec->socdev->card->dai_link->codec_dai;
 
-	setup_timer(&n516_hplug_timer, n516_hplug_timer_func, (unsigned long)codec);
+	n516_codec = codec;
 
-	snd_soc_dapm_disable_pin(codec, "LLINEIN");
-	snd_soc_dapm_disable_pin(codec, "RLINEIN");
+	snd_soc_dapm_nc_pin(codec, "LIN");
+	snd_soc_dapm_nc_pin(codec, "RIN");
 
-	/* Add n516 specific controls */
-	for (i = 0; i < ARRAY_SIZE(jzcodec_n516_controls); i++) {
-		err = snd_ctl_add(codec->card,
-			snd_soc_cnew(&jzcodec_n516_controls[i],codec, NULL));
-		if (err < 0)
-			return err;
+	ret = snd_soc_dai_set_fmt(codec_dai, N516_DAIFMT);
+	if (ret < 0) {
+		dev_err(codec->dev, "Failed to set codec dai format: %d\n", ret);
+		return ret;
 	}
 
-	/* Add n516 specific widgets */
-	for(i = 0; i < ARRAY_SIZE(jzcodec_dapm_widgets); i++) {
-		snd_soc_dapm_new_control(codec, &jzcodec_dapm_widgets[i]);
+	ret = snd_soc_dai_set_fmt(cpu_dai, N516_DAIFMT);
+	if (ret < 0) {
+		dev_err(codec->dev, "Failed to set cpu dai format: %d\n", ret);
+		return ret;
 	}
 
-	/* Set up n516 specific audio path audio_map */
-	snd_soc_dapm_add_routes(codec, audio_map, ARRAY_SIZE(audio_map));
+	ret = snd_soc_dai_set_sysclk(codec_dai, JZCODEC_SYSCLK, 111,
+		SND_SOC_CLOCK_IN);
+	if (ret < 0) {
+		dev_err(codec->dev, "Failed to set codec dai sysclk: %d\n", ret);
+		return ret;
+	}
+
+	ret = snd_soc_add_controls(codec, n516_controls,
+		ARRAY_SIZE(n516_controls));
+	if (ret) {
+		dev_err(codec->dev, "Failed to add controls: %d\n", ret);
+		return ret;
+	}
+
+
+	ret = snd_soc_dapm_new_controls(codec, n516_widgets,
+		ARRAY_SIZE(n516_widgets));
+	if (ret) {
+		dev_err(codec->dev, "Failed to add dapm controls: %d\n", ret);
+		return ret;
+	}
+
+	ret = snd_soc_dapm_add_routes(codec, n516_routes, ARRAY_SIZE(n516_routes));
+	if (ret) {
+		dev_err(codec->dev, "Failed to add dapm routes: %d\n", ret);
+		return ret;
+	}
 
 	snd_soc_dapm_sync(codec);
 
-	board_initialized = 1;
 	return 0;
 }
 
-/* n516 digital audio interface glue - connects codec <--> CPU */
 static struct snd_soc_dai_link n516_dai = {
-	.name = "JZCODEC",
+	.name = "jz-codec",
 	.stream_name = "JZCODEC",
 	.cpu_dai = &jz4740_i2s_dai,
-	.codec_dai = &jzcodec_dai,
-	.init = n516_jzcodec_init,
-	.ops = &n516_ops,
+	.codec_dai = &jz_codec_dai,
+	.init = n516_codec_init,
 };
 
-/* n516 audio machine driver */
-static struct snd_soc_card snd_soc_n516 = {
-	.name = "n516",
-	.platform = &jz4740_soc_platform,
+static struct snd_soc_card n516_card = {
+	.name = "N516",
 	.dai_link = &n516_dai,
 	.num_links = 1,
+	.platform = &jz4740_soc_platform,
 };
 
-/* n516 audio subsystem */
 static struct snd_soc_device n516_snd_devdata = {
-	.card = &snd_soc_n516,
+	.card = &n516_card,
 	.codec_dev = &soc_codec_dev_jzcodec,
 };
 
 static struct platform_device *n516_snd_device;
+
+static struct snd_soc_jack n516_hp_jack;
+
+static struct snd_soc_jack_pin n516_hp_pin = {
+	.pin = "Headphone",
+	.mask = SND_JACK_HEADPHONE,
+};
+
+static struct snd_soc_jack_gpio n516_hp_gpio = {
+	.gpio = GPIO_HPHONE_DETECT,
+	.name = "Headphone detect",
+	.report = SND_JACK_HEADPHONE,
+	.debounce_time = 100,
+};
+
+static int __init n516_add_headphone_jack(void)
+{
+	int ret;
+
+	ret = snd_soc_jack_new(&n516_card, "Headphone jack",
+		SND_JACK_HEADPHONE, &n516_hp_jack);
+	if (ret)
+		return ret;
+
+	ret = snd_soc_jack_add_pins(&n516_hp_jack, 1, &n516_hp_pin);
+	if (ret)
+		return ret;
+
+	ret = snd_soc_jack_add_gpios(&n516_hp_jack, 1, &n516_hp_gpio);
+
+	return ret;
+}
 
 static int __init n516_init(void)
 {
@@ -283,79 +256,50 @@ static int __init n516_init(void)
 	if (!n516_snd_device)
 		return -ENOMEM;
 
-	ret = gpio_request(GPIO_HPHONE_PLUG, "Headphones detect");
+	ret = gpio_request(GPIO_SPEAKER_ENABLE, "Speaker enable");
 	if (ret) {
-		dev_err(&n516_snd_device->dev,
-				"Failed to request headphone detect GPIO\n");
-		goto err_gpio_hplug_request;
+		pr_err("n516 snd: Failed to request SPEAKER_ENABLE GPIO(%d): %d\n",
+				GPIO_SPEAKER_ENABLE, ret);
+		goto err_device_put;
 	}
 
-	ret = gpio_request(GPIO_SPK_SHUD, "Speaker off");
-	if (ret) {
-		dev_err(&n516_snd_device->dev,
-				"Failed to request speaker off GPIO\n");
-		goto err_gpio_spk_shud_request;
-	}
-
-	gpio_direction_input(GPIO_HPHONE_PLUG);
-	gpio_direction_output(GPIO_SPK_SHUD, 0);
-	jz_gpio_disable_pullup(GPIO_HPHONE_PLUG);
+	gpio_direction_output(GPIO_SPEAKER_ENABLE, 0);
+	INIT_WORK(&n516_headphone_work, n516_headphone_event_work);
 
 	platform_set_drvdata(n516_snd_device, &n516_snd_devdata);
 	n516_snd_devdata.dev = &n516_snd_device->dev;
-
 	ret = platform_device_add(n516_snd_device);
 	if (ret) {
-		goto err_platform_dev_add;
+		pr_err("n516 snd: Failed to add snd soc device: %d\n", ret);
+		goto err_unset_pdata;
 	}
 
-
-	ret = request_irq(gpio_to_irq(GPIO_HPHONE_PLUG),
-			n516_hplug_irq, IRQF_SHARED,
-			"Headphone detect", (void *)123123);
-	if (ret) {
-		dev_err(&n516_snd_device->dev,
-				"Unable to request headphone detection IRQ\n");
-		goto err_irq_request;
-	}
-
-	n516_headphone_present = gpio_get_value(GPIO_HPHONE_PLUG);
-
-	if (n516_headphone_present)
-		set_irq_type(gpio_to_irq(GPIO_HPHONE_PLUG),
-				IRQ_TYPE_EDGE_FALLING);
-	else
-		set_irq_type(gpio_to_irq(GPIO_HPHONE_PLUG),
-				IRQ_TYPE_EDGE_RISING);
+	ret = n516_add_headphone_jack();
+	/* We can live without it, so just print a warning */
+	if (ret)
+		pr_warning("n516 snd: Failed to initalise headphone jack: %d\n", ret);
 
 	return 0;
 
-	platform_device_unregister(n516_snd_device);
-	n516_snd_device = NULL;
-err_platform_dev_add:
-	free_irq(gpio_to_irq(GPIO_HPHONE_PLUG), (void *)123123);
-err_irq_request:
-	gpio_free(GPIO_SPK_SHUD);
-err_gpio_spk_shud_request:
-	gpio_free(GPIO_HPHONE_PLUG);
-err_gpio_hplug_request:
-	if (n516_snd_device)
-		platform_device_put(n516_snd_device);
+err_unset_pdata:
+	platform_set_drvdata(n516_snd_device, NULL);
+/*err_gpio_free_speaker:*/
+	gpio_free(GPIO_SPEAKER_ENABLE);
+err_device_put:
+	platform_device_put(n516_snd_device);
+
 	return ret;
 }
+module_init(n516_init);
 
 static void __exit n516_exit(void)
 {
-	free_irq(gpio_to_irq(GPIO_HPHONE_PLUG), (void *)123123);
-	gpio_free(GPIO_SPK_SHUD);
-	gpio_free(GPIO_HPHONE_PLUG);
+	snd_soc_jack_free_gpios(&n516_hp_jack, 1, &n516_hp_gpio);
+	gpio_free(GPIO_SPEAKER_ENABLE);
 	platform_device_unregister(n516_snd_device);
 }
-
-module_init(n516_init);
 module_exit(n516_exit);
 
-/* Module information */
-MODULE_AUTHOR("Yauhen Kharuzhy");
-MODULE_DESCRIPTION("ALSA SoC n516");
-MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Lars-Peter Clausen <lars@metafoo.de>");
+MODULE_DESCRIPTION("ALSA SoC N516 Audio support");
+MODULE_LICENSE("GPL v2");
