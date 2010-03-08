@@ -116,9 +116,11 @@ config BATTERY_LBOOKV3
 	help
 	  Say Y to enable support for the battery in HanLin/lBook eReader V3.
 
-config N516_USB_POWER
-	tristate "N516 USB power supply driver"
+config CHARGER_GPIO
+	tristate "GPIO charger"
+	depends on GPIOLIB
 	help
-	  Say Y hee to enable support for USB power supply on N516 bookreader.
+	  Say Y to include support for chargers indicating their status through
+	  a GPIO pin.
 
 endif # POWER_SUPPLY

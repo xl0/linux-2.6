@@ -1,6 +1,6 @@
 config SND_JZ4740_SOC
-	tristate "SoC Audio for Ingenic jz4740 chip"
-	depends on (JZ4740_PAVO || JZ4740_N516 || JZ4725_DIPPER || JZ4720_VIRGO) && SND_SOC
+	tristate "SoC Audio for Ingenic JZ4740 SoC"
+	depends on SOC_JZ4740 && SND_SOC
 	help
 	  Say Y or M if you want to add support for codecs attached to
 	  the Jz4740 AC97, I2S or SSP interface. You will also need
@@ -10,15 +10,15 @@ config SND_JZ4740_SOC_N516
 	tristate "SoC Audio support for Hanvon N516 eBook reader"
 	depends on SND_JZ4740_SOC && JZ4740_N516
 	select SND_JZ4740_SOC_I2S
-	select SND_SOC_JZCODEC
+    select SND_SOC_JZCODEC
 	help
-	  Say Y if you want to add support for SoC audio of internal codec on Hanvon N516.
+	  Say Y if you want to enable support for SoC audio on the Hanvon N516.
 
 config SND_JZ4740_SOC_N526
 	tristate "SoC Audio support for Hanvon N526 eBook reader"
 	depends on SND_JZ4740_SOC && JZ4740_N526
 	select SND_JZ4740_SOC_I2S
-	select SND_SOC_JZCODEC
+    select SND_SOC_JZCODEC
 	help
 	  Say Y if you want to enable support for SoC audio on the Hanvon N526.
 
@@ -26,4 +26,5 @@ config SND_JZ4740_SOC_I2S
 	depends on SND_JZ4740_SOC
 	tristate "SoC Audio (I2S protocol) for Ingenic jz4740 chip"
 	help
-	  Say Y if you want to use I2S protocol and I2S codec on Ingenic Jz4740 PAVO and N516 boards.
+	  Say Y if you want to use I2S protocol and I2S codec on Ingenic Jz4740
+	  boards.
