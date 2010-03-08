@@ -329,7 +329,7 @@ static int n516_wait_event(struct metronomefb_par *par)
 
 static int n516_wait_event_intr(struct metronomefb_par *par)
 {
-	unsigned long timeout = jiffies + HZi / 20;
+	unsigned long timeout = jiffies + HZ / 20;
 
 	dev_dbg(&n516_device->dev, "ENTER1 %s, RDY=%d\n",
 			__FUNCTION__, gpio_get_value(GPIO_DISPLAY_RDY));
