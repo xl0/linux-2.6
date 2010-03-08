@@ -223,16 +223,14 @@ static irqreturn_t n516_lpc_irq_thread(int irq, void *devid)
 	dev_dbg(&client->dev, "msg: 0x%02x\n", raw_msg);
 
 	/* Ack wakeup event */
-	if (raw_msg == 0x1f)
-		n516_lpc_send_message(chip, 0x00);
-
-	if ((raw_msg & 0x40) < ARRAY_SIZE(n516_lpc_keymap)) {
+	if ((raw_msg & ~0x40) < ARRAY_SIZE(n516_lpc_keymap))
 		n516_key_event(chip, raw_msg);
-	} else if ((raw_msg >= 0x81) && (raw_msg <= 0x87)) {
+	else if ((raw_msg >= 0x81) && (raw_msg <= 0x87))
 		n516_battery_event(chip, raw_msg - 0x81);
-	} else {
+	else if (raw_msg == 0x7e)
+		n516_lpc_send_message(chip, 0x00);
+	else
 		dev_warn(&client->dev, "Unkown message: %x\n", raw_msg);
-	}
 
 	if (chip->suspending)
 		chip->can_sleep = 0;
