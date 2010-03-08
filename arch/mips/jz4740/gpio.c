@@ -322,8 +322,8 @@ static void jz_gpio_irq_shutdown(unsigned int irq)
 {
 	struct irq_desc *desc = irq_to_desc(irq);
 
-	desc->status |= IRQ_MASKED;
 	jz_gpio_irq_mask(irq);
+	desc->status |= IRQ_MASKED;
 
 	/* Set direction to input */
 	jz_gpio_set_irq_bit(irq, JZ_REG_GPIO_DIRECTION_CLEAR);
