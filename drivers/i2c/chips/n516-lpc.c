@@ -158,6 +158,16 @@ static irqreturn_t n516_bat_charge_irq(int irq, void *dev)
 	return IRQ_HANDLED;
 }
 
+static int n516_lpc_send_message(struct n516_lpc_chip *chip, unsigned char val)
+{
+	struct i2c_client *client = chip->i2c_client;
+	struct i2c_msg msg = {client->addr, client->flags, 1, &val};
+	int ret = 0;
+
+	ret = i2c_transfer(client->adapter, &msg, 1);
+	return ret > 0 ? 0 : ret;
+}
+
 static void n516_key_event(struct n516_lpc_chip *chip, unsigned char keycode)
 {
 	struct i2c_client *client = chip->i2c_client;
@@ -184,7 +194,6 @@ static void n516_key_event(struct n516_lpc_chip *chip, unsigned char keycode)
 		input_report_key(chip->input, KEY_LEFTALT, 0);
 	input_sync(chip->input);
 }
-
 
 static void n516_battery_event(struct n516_lpc_chip *chip, unsigned char battery_level)
 {
@@ -213,6 +222,10 @@ static irqreturn_t n516_lpc_irq_thread(int irq, void *devid)
 
 	dev_dbg(&client->dev, "msg: 0x%02x\n", raw_msg);
 
+	/* Ack wakeup event */
+	if (raw_msg == 0x1f)
+		n516_lpc_send_message(chip, 0x00);
+
 	if ((raw_msg & 0x40) < ARRAY_SIZE(n516_lpc_keymap)) {
 		n516_key_event(chip, raw_msg);
 	} else if ((raw_msg >= 0x81) && (raw_msg <= 0x87)) {
@@ -225,17 +238,6 @@ static irqreturn_t n516_lpc_irq_thread(int irq, void *devid)
 		chip->can_sleep = 0;
 
 	return IRQ_HANDLED;
-}
-
-static int n516_lpc_set_normal_mode(struct n516_lpc_chip *chip)
-{
-	struct i2c_client *client = chip->i2c_client;
-	unsigned char val = 0x02;
-	struct i2c_msg msg = {client->addr, client->flags, 1, &val};
-	int ret = 0;
-
-	ret = i2c_transfer(client->adapter, &msg, 1);
-	return ret > 0 ? 0 : ret;
 }
 
 static void n516_lpc_power_off(void)
@@ -309,7 +311,8 @@ static int __devinit n516_lpc_probe(struct i2c_client *client, const struct i2c_
 		goto err_gpio_req_chargstat;
 	}
 
-	n516_lpc_set_normal_mode(chip);
+	/* Enter normal mode */
+	n516_lpc_send_message(chip, 0x2);
 
 	input = input_allocate_device();
 	if (!input) {
