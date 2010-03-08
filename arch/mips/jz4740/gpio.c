@@ -312,8 +312,8 @@ static unsigned int jz_gpio_irq_startup(unsigned int irq)
 
 	jz_gpio_set_irq_bit(irq, JZ_REG_GPIO_SELECT_SET);
 
-	jz_gpio_irq_unmask(irq);
 	desc->status &= ~IRQ_MASKED;
+	jz_gpio_irq_unmask(irq);
 
 	return 0;
 }
@@ -322,8 +322,8 @@ static void jz_gpio_irq_shutdown(unsigned int irq)
 {
 	struct irq_desc *desc = irq_to_desc(irq);
 
-	jz_gpio_irq_mask(irq);
 	desc->status |= IRQ_MASKED;
+	jz_gpio_irq_mask(irq);
 
 	/* Set direction to input */
 	jz_gpio_set_irq_bit(irq, JZ_REG_GPIO_DIRECTION_CLEAR);
@@ -446,6 +446,7 @@ int jz_gpio_suspend(void)
 		gpio = chip->gpio_chip.base;
 		chip->suspend_mask = readl(GPIO_TO_REG(gpio, JZ_REG_GPIO_MASK));
 		writel(~(chip->wakeup), GPIO_TO_REG(gpio, JZ_REG_GPIO_MASK_SET));
+		writel(chip->wakeup, GPIO_TO_REG(gpio, JZ_REG_GPIO_MASK_CLEAR));
 	}
 
 	chip = jz_gpio_chips;
@@ -459,7 +460,10 @@ int jz_gpio_resume(void)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(jz_gpio_chips); ++i, ++chip) {
-		writel(~(chip->suspend_mask), GPIO_TO_REG(chip->gpio_chip.base, JZ_REG_GPIO_MASK_CLEAR));
+		writel(~(chip->suspend_mask), GPIO_TO_REG(chip->gpio_chip.base,
+			JZ_REG_GPIO_MASK_CLEAR));
+		writel(chip->suspend_mask, GPIO_TO_REG(chip->gpio_chip.base,
+			JZ_REG_GPIO_MASK_SET));
 	}
 
 	return 0;
