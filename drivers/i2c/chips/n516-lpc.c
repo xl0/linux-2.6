@@ -230,7 +230,7 @@ static irqreturn_t n516_lpc_irq_thread(int irq, void *devid)
 	else if (raw_msg == 0x7e)
 		n516_lpc_send_message(chip, 0x00);
 	else
-		dev_warn(&client->dev, "Unkown message: %x\n", raw_msg);
+		dev_warn(&client->dev, "Unknown message: %x\n", raw_msg);
 
 	if (chip->suspending)
 		chip->can_sleep = 0;
