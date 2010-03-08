@@ -119,8 +119,10 @@ static int n516_share_video_mem(struct fb_info *info)
 {
 	int ret;
 
-	dev_dbg(&n516_device->dev, "ENTER %s\n", __func__);
-	dev_dbg(&n516_device->dev, "%s, info->var.xres = %u, info->var.yres = %u\n", __func__, info->var.xres, info->var.yres);
+	dev_dbg(&n516_device->dev, "ENTER %s\n", __FUNCTION__);
+	dev_dbg(&n516_device->dev,
+			"%s, info->var.xres = %u, info->var.yres = %u\n",
+			__FUNCTION__, info->var.xres, info->var.yres);
 	/* rough check if this is our desired fb and not something else */
 	if ((info->var.xres != n516_fb_pdata.modes[0].xres)
 		|| (info->var.yres != n516_fb_pdata.modes[0].yres))
@@ -153,7 +155,7 @@ static int n516_share_video_mem(struct fb_info *info)
 
 static int n516_unshare_video_mem(struct fb_info *info)
 {
-	dev_dbg(&n516_device->dev, "ENTER %s\n", __func__);
+	dev_dbg(&n516_device->dev, "ENTER %s\n", __FUNCTION__);
 
 	if (info != n516_metronome_info.host_fbinfo)
 		return 0;
@@ -168,7 +170,7 @@ static int n516_fb_notifier_callback(struct notifier_block *self,
 	struct fb_event *evdata = data;
 	struct fb_info *info = evdata->info;
 
-	dev_dbg(&n516_device->dev, "ENTER %s\n", __func__);
+	dev_dbg(&n516_device->dev, "ENTER %s\n", __FUNCTION__);
 
 	switch (event) {
 	case FB_EVENT_FB_REGISTERED:
@@ -233,7 +235,8 @@ static int n516_setup_fb(struct metronomefb_par *par)
 	par->metromem_cmd = (struct metromem_cmd *) n516_metronome_info.metromem;
 	par->metromem_wfm = n516_metronome_info.metromem + n516_metronome_info.fw;
 	par->metromem_img = par->metromem_wfm + n516_metronome_info.wfm_size;
-	par->metromem_img_csum = (u16 *) (par->metromem_img + (n516_metronome_info.fw * n516_metronome_info.fh));
+	par->metromem_img_csum = (u16 *) (par->metromem_img +
+			(n516_metronome_info.fw * n516_metronome_info.fh));
 	par->metromem_dma = n516_metronome_info.host_fbinfo->fix.smem_start;
 
 	return 0;
@@ -248,7 +251,8 @@ static irqreturn_t n516_handle_irq(int irq, void *dev_id)
 {
 	struct metronomefb_par *par = dev_id;
 
-	dev_dbg(&par->pdev->dev, "Metronome IRQ! RDY=%d\n", 	gpio_get_value(GPIO_DISPLAY_RDY));
+	dev_dbg(&par->pdev->dev, "Metronome IRQ! RDY=%d\n",
+			gpio_get_value(GPIO_DISPLAY_RDY));
 	wake_up_all(&par->waitq);
 
 	return IRQ_HANDLED;
@@ -282,11 +286,10 @@ static int n516_setup_irq(struct fb_info *info)
 {
 	int ret;
 
-	dev_dbg(&n516_device->dev, "ENTER %s\n", __func__);
+	dev_dbg(&n516_device->dev, "ENTER %s\n", __FUNCTION__);
 
 	ret = request_irq(gpio_to_irq(GPIO_DISPLAY_RDY), n516_handle_irq,
-				IRQF_TRIGGER_RISING,
-				"n516", info->par);
+				IRQF_TRIGGER_RISING, "n516", info->par);
 	if (ret)
 		dev_err(&n516_device->dev, "request_irq failed: %d\n", ret);
 
@@ -295,20 +298,18 @@ static int n516_setup_irq(struct fb_info *info)
 
 static void n516_set_rst(struct metronomefb_par *par, int state)
 {
-	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n", __func__, gpio_get_value(GPIO_DISPLAY_RDY));
-	if (state)
-		gpio_set_value(GPIO_DISPLAY_RST_L, 1);
-	else
-		gpio_set_value(GPIO_DISPLAY_RST_L, 0);
+	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n",
+			__FUNCTION__, gpio_get_value(GPIO_DISPLAY_RDY));
+	
+	gpio_set_value(GPIO_DISPLAY_RST_L, !!state);
 }
 
 static void n516_set_stdby(struct metronomefb_par *par, int state)
 {
-	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n", __func__, gpio_get_value(GPIO_DISPLAY_RDY));
-	if (state)
-		gpio_set_value(GPIO_DISPLAY_STBY, 1);
-	else
-		gpio_set_value(GPIO_DISPLAY_STBY, 0);
+	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n",
+			__FUNCTION__, gpio_get_value(GPIO_DISPLAY_RDY));
+
+	gpio_set_value(GPIO_DISPLAY_STBY, !!state);
 }
 
 static int n516_wait_event(struct metronomefb_par *par)
@@ -316,27 +317,27 @@ static int n516_wait_event(struct metronomefb_par *par)
 	unsigned long timeout = jiffies + HZ / 20;
 
 	dev_dbg(&n516_device->dev, "ENTER1 %s, RDY=%d\n",
-			__func__, gpio_get_value(GPIO_DISPLAY_RDY));
+			__FUNCTION__, gpio_get_value(GPIO_DISPLAY_RDY));
 	while (n516_get_rdy(par) && time_before(jiffies, timeout))
 		schedule();
 
 	dev_dbg(&n516_device->dev, "ENTER2 %s, RDY=%d\n",
-			__func__, gpio_get_value(GPIO_DISPLAY_RDY));
+			__FUNCTION__, gpio_get_value(GPIO_DISPLAY_RDY));
 	return wait_event_timeout(par->waitq,
 			n516_get_rdy(par), HZ * 2) ? 0 : -EIO;
 }
 
 static int n516_wait_event_intr(struct metronomefb_par *par)
 {
-	unsigned long timeout = jiffies + HZ/20;
+	unsigned long timeout = jiffies + HZi / 20;
 
 	dev_dbg(&n516_device->dev, "ENTER1 %s, RDY=%d\n",
-			__func__, gpio_get_value(GPIO_DISPLAY_RDY));
+			__FUNCTION__, gpio_get_value(GPIO_DISPLAY_RDY));
 	while (n516_get_rdy(par) && time_before(jiffies, timeout))
 		schedule();
 
 	dev_dbg(&n516_device->dev, "ENTER2 %s, RDY=%d\n",
-			__func__, gpio_get_value(GPIO_DISPLAY_RDY));
+			__FUNCTION__, gpio_get_value(GPIO_DISPLAY_RDY));
 	return wait_event_interruptible_timeout(par->waitq,
 					n516_get_rdy(par), HZ * 2) ? 0 : -EIO;
 }
