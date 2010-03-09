@@ -995,7 +995,7 @@ static int __devinit metronomefb_probe(struct platform_device *dev)
 	if (!par->fxbuckets)
 		goto err_vfree;
 
-	par->fybuckets = kmalloc(fh * sizeof(*par->fxbuckets), GFP_KERNEL);
+	par->fybuckets = kmalloc(fh * sizeof(*par->fybuckets), GFP_KERNEL);
 	if (!par->fybuckets)
 		goto err_fxbuckets;
 
