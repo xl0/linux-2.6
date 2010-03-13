@@ -1,3 +1,12 @@
+linux-2.6 (2.6.32-1) zelazny; urgency=low
+
+  * New upstream version 2.6.32
+  * Migrate to Qi's jz4740 architecture support code
+  * Rotation in the metronomefb
+  * Fixed bugs #739, #771, #737
+
+ -- Yauhen Kharuzhy <jekhor@gmail.com>  Sat, 13 Mar 2010 12:04:16 +0200
+
 linux-2.6 (2.6.29-37) zelazny; urgency=low
 
   * n516-lpc: Add long key presses
