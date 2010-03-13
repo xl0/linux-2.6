@@ -82,9 +82,9 @@ static int n516_enable_hostfb(bool enable)
 	int ret;
 	int blank = enable ? FB_BLANK_UNBLANK : FB_BLANK_POWERDOWN;
 
-	acquire_console_sem();
+	/*acquire_console_sem();*/
 	ret = fb_blank(n516_metronome_info.host_fbinfo, blank);
-	release_console_sem();
+	/*release_console_sem();*/
 
 	return ret;
 }
