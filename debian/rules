@@ -5,7 +5,7 @@
 
 DEB_HOST_ARCH ?= $(dpkg-architecture -qDEB_HOST_ARCH)
 
-LINUX_VERSION = 2.6.29
+LINUX_VERSION = 2.6.32
 
 ifeq (armel,$(DEB_HOST_ARCH))
   flavours := v3 v3ext nfsroot-v3 nfsroot-prs505
