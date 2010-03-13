@@ -111,7 +111,7 @@ static struct jz_nand_platform_data n516_nand_pdata = {
 };
 
 static char *n516_batteries[] = {
-	"n516_battery",
+	"n516-battery",
 };
 
 static struct gpio_charger_platform_data n516_charger_pdata = {
