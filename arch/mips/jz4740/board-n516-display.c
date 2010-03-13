@@ -94,7 +94,7 @@ static int n516_init_metronome_gpios(struct metronomefb_par *par)
 	int i;
 	int ret;
 
-	for (i = 1; i < ARRAY_SIZE(metronome_gpios); ++i) {
+	for (i = 0; i < ARRAY_SIZE(metronome_gpios); ++i) {
 		ret = gpio_request(metronome_gpios[i], metronome_gpio_names[i]);
 		if (ret)
 			goto err;
@@ -300,7 +300,7 @@ static void n516_set_rst(struct metronomefb_par *par, int state)
 {
 	dev_dbg(&n516_device->dev, "ENTER %s, RDY=%d\n",
 			__FUNCTION__, gpio_get_value(GPIO_DISPLAY_RDY));
-	
+
 	gpio_set_value(GPIO_DISPLAY_RST_L, !!state);
 }
 
