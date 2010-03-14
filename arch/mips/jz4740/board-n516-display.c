@@ -202,7 +202,7 @@ static void __init n516_presetup_fb(void)
 	*/
 
 	n516_metronome_info.fw = 800;
-	n516_metronome_info.fh = 624;
+	n516_metronome_info.fh = 600;
 
 	/* waveform must be 16k + 2 for checksum */
 	n516_metronome_info.wfm_size = roundup(16*1024 + 2, n516_metronome_info.fw);
