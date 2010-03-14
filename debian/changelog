@@ -1,3 +1,13 @@
+linux-2.6 (2.6.32-3) zelazny; urgency=low
+
+  [ Lars-Peter Clausen ]
+  * jzcodec: Fix supported formats. Should fix #841
+
+  [ Mikhail Gusarov ]
+  * Update changelog
+
+ -- Mikhail Gusarov <dottedmag@dottedmag.net>  Mon, 15 Mar 2010 01:10:28 +0600
+
 linux-2.6 (2.6.32-2) zelazny; urgency=low
 
   [ Lars-Peter Clausen ]
