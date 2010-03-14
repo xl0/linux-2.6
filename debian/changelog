@@ -1,3 +1,19 @@
+linux-2.6 (2.6.32-2) zelazny; urgency=low
+
+  [ Lars-Peter Clausen ]
+  * board-n516-display: Don't skip the first gpio when requesting the
+    gpios
+  * board-n516-display: Don't accquire the console semaphore when
+    blanking the hostfb
+
+  [ Yauhen Kharuzhy ]
+  * N516: Fix battery power supply name in GPIO charger platform data
+  * lm75: Remove forgotten debug
+  * N516: Fix memory corruption and "Resetting Metronome" messages
+  * metronomefb: Ressurection of asynchronous display update
+
+ -- Yauhen Kharuzhy <jekhor@gmail.com>  Sun, 14 Mar 2010 15:55:10 +0200
+
 linux-2.6 (2.6.32-1) zelazny; urgency=low
 
   * New upstream version 2.6.32
