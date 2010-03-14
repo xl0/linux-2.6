@@ -79,9 +79,14 @@ static struct irq_chip intc_irq_type = {
 static irqreturn_t jz4740_cascade(int irq, void *data)
 {
 	uint32_t irq_reg;
+	int intc_irq;
 
 	irq_reg = readl(jz_intc_base + JZ_REG_INTC_PENDING);
-	generic_handle_irq(ffs(irq_reg) - 1 + JZ_IRQ_BASE);
+	intc_irq = ffs(irq_reg);
+
+	if (intc_irq) {
+		generic_handle_irq(intc_irq - 1 + JZ_IRQ_BASE);
+	}
 
 	return IRQ_HANDLED;
 }
