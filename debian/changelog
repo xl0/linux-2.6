@@ -1,3 +1,10 @@
+linux-2.6 (2.6.32-4) zelazny; urgency=low
+
+  [ Lars-Peter Clausen ]
+  * jz4740-irq: Fix irq handler if no irq is pending.
+
+ -- Yauhen Kharuzhy <jekhor@gmail.com>  Thu, 18 Mar 2010 00:16:19 +0200
+
 linux-2.6 (2.6.32-3) zelazny; urgency=low
 
   [ Lars-Peter Clausen ]
