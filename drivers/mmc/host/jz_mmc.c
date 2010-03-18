@@ -807,6 +807,8 @@ static int __devinit jz4740_mmc_probe(struct platform_device* pdev)
 			dev_err(&pdev->dev, "Failed to request card detect irq");
 			goto err_free_gpios;
 		}
+
+		device_init_wakeup(&pdev->dev, 1);
 	}
 
 	ret = request_threaded_irq(host->irq, jz_mmc_irq, jz_mmc_irq_worker, IRQF_DISABLED, "MMC/SD", host);
@@ -900,6 +902,9 @@ static int jz4740_mmc_suspend(struct device *dev)
 	else
 		jz_gpio_bulk_suspend(jz4740_mmc_pins, ARRAY_SIZE(jz4740_mmc_pins));
 
+	if (device_may_wakeup(dev))
+		enable_irq_wake(host->card_detect_irq);
+
 	return 0;
 }
 
@@ -907,6 +912,9 @@ static int jz4740_mmc_resume(struct device *dev)
 {
 	struct jz4740_mmc_host *host = dev_get_drvdata(dev);
 	struct jz4740_mmc_platform_data *pdata = host->pdata;
+
+	if (device_may_wakeup(dev))
+		disable_irq_wake(host->card_detect_irq);
 
 	if (pdata && pdata->data_1bit)
 		jz_gpio_bulk_resume(jz4740_mmc_pins, ARRAY_SIZE(jz4740_mmc_pins) - 3);
