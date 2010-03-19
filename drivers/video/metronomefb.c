@@ -42,6 +42,13 @@
 
 #include <asm/unaligned.h>
 
+/*
+ * 12 is ok to avoid refreshing whole screen while small elements are changed,
+ * while forcing full refresh if largish dialog boxes or menus are
+ * shown/dismissed.
+ */
+#define DEFAULT_MANUAL_REFRESH_THRESHOLD 12
+
 #define WF_MODE_INIT	0 /* Initialization */
 #define WF_MODE_MU	1 /* Monochrome update */
 #define WF_MODE_GU	2 /* Grayscale update */
@@ -1131,7 +1138,7 @@ static int __devinit metronomefb_probe(struct platform_device *dev)
 		goto err_fxbuckets;
 
 	init_waitqueue_head(&par->waitq);
-	par->manual_refresh_threshold = 60;
+	par->manual_refresh_threshold = DEFAULT_MANUAL_REFRESH_THRESHOLD;
 	par->partial_autorefresh_interval = 256;
 	par->partial_updates_count = 0;
 	par->is_first_update = 1;
