@@ -1,3 +1,9 @@
+linux-2.6 (2.6.32-7) zelazny; urgency=low
+
+  * metronomefb: Preserve var->grayscale = 1
+
+ -- Yauhen Kharuzhy <jekhor@gmail.com>  Sun, 21 Mar 2010 13:33:22 +0200
+
 linux-2.6 (2.6.32-6) zelazny; urgency=low
 
   [ Mikhail Gusarov ]
