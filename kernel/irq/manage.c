@@ -200,7 +200,8 @@ static inline int setup_affinity(unsigned int irq, struct irq_desc *desc)
 void __disable_irq(struct irq_desc *desc, unsigned int irq, bool suspend)
 {
 	if (suspend) {
-		if (!desc->action || (desc->action->flags & IRQF_TIMER))
+		if (!desc->action || (desc->action->flags & IRQF_TIMER)
+				|| (desc->status & IRQ_WAKEUP))
 			return;
 		desc->status |= IRQ_SUSPENDED;
 	}
