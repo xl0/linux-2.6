@@ -774,7 +774,6 @@ static int read_fifo(struct jz4740_ep *ep, struct jz4740_request *req)
 static void done(struct jz4740_ep *ep, struct jz4740_request *req, int status)
 {
 	unsigned int stopped = ep->stopped;
-	unsigned long flags;
 	uint32_t index;
 
 	DEBUG("%s, %p\n", __FUNCTION__, ep);
@@ -793,14 +792,14 @@ static void done(struct jz4740_ep *ep, struct jz4740_request *req, int status)
 	/* don't modify queue heads during completion callback */
 	ep->stopped = 1;
 	/* Read current index (completion may modify it) */
-	spin_lock_irqsave(&ep->dev->lock, flags);
 	index = usb_readb(ep->dev, JZ_REG_UDC_INDEX);
+	spin_unlock_irqrestore(&ep->dev->lock, ep->dev->lock_flags);
 
 	req->req.complete(&ep->ep, &req->req);
 
+	spin_lock_irqsave(&ep->dev->lock, ep->dev->lock_flags);
 	/* Restore index */
 	jz_udc_set_index(ep->dev, index);
-	spin_unlock_irqrestore(&ep->dev->lock, flags);
 	ep->stopped = stopped;
 }
 
@@ -1255,7 +1254,6 @@ static int jz4740_queue(struct usb_ep *_ep, struct usb_request *_req,
 	struct jz4740_request *req;
 	struct jz4740_ep *ep;
 	struct jz4740_udc *dev;
-	unsigned long flags;
 
 	DEBUG("%s, %p\n", __FUNCTION__, _ep);
 
@@ -1282,7 +1280,7 @@ static int jz4740_queue(struct usb_ep *_ep, struct usb_request *_req,
 	DEBUG("%s queue req %p, len %d buf %p\n", _ep->name, _req, _req->length,
 	      _req->buf);
 
-	spin_lock_irqsave(&dev->lock, flags);
+	spin_lock_irqsave(&dev->lock, dev->lock_flags);
 
 	_req->status = -EINPROGRESS;
 	_req->actual = 0;
@@ -1328,7 +1326,7 @@ static int jz4740_queue(struct usb_ep *_ep, struct usb_request *_req,
 	if (likely(req != 0))
 		list_add_tail(&req->queue, &ep->queue);
 
-	spin_unlock_irqrestore(&dev->lock, flags);
+	spin_unlock_irqrestore(&dev->lock, dev->lock_flags);
 
 	return 0;
 }
