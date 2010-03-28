@@ -1,3 +1,17 @@
+linux-2.6 (2.6.32-8) zelazny; urgency=low
+
+  [ Mikhail Gusarov ]
+  * Upload
+  
+  [ Yauhen Kharuzhy ]
+  * jz4740_udc: Fix recursive spinlocks (partially fixes: #853)
+  * IRQ PM: Don't suspend wakeup interrupts
+  
+  [ Lars-Peter Clausen ]
+  * jz_mmc: Serveral timeout related changes
+
+ -- Mikhail Gusarov <dottedmag@dottedmag.net>  Mon, 29 Mar 2010 04:09:42 +0700
+
 linux-2.6 (2.6.32-7) zelazny; urgency=low
 
   * metronomefb: Preserve var->grayscale = 1
