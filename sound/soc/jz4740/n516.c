@@ -1,8 +1,6 @@
 /*
- * SoC audio for n516 eBook reader
- *
  * Copyright (C) 2009, Yauhen Kharuzhy <jekhor@gmail.com>
- *     OpenInkpot project
+ *  OpenInkpot project
  * Copyright (C) 2010, Lars-Peter Clausen <lars@metafoo.de>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -69,7 +67,7 @@ static void n516_ext_control(void)
 }
 
 static int n516_speaker_event(struct snd_soc_dapm_widget *widget,
-			struct snd_kcontrol *ctrl, int event)
+				 struct snd_kcontrol *ctrl, int event)
 {
 	int on = !SND_SOC_DAPM_EVENT_OFF(event);
 
@@ -84,11 +82,10 @@ static void n516_headphone_event_work(struct work_struct *work)
 }
 
 static int n516_headphone_event(struct snd_soc_dapm_widget *widget,
-			struct snd_kcontrol *ctrl, int event)
+				 struct snd_kcontrol *ctrl, int event)
 {
 	/* We can't call soc_dapm_sync from a event handler */
-	if (event & (SND_SOC_DAPM_POST_PMU | SND_SOC_DAPM_POST_PMD))
-		schedule_work(&n516_headphone_work);
+	schedule_work(&n516_headphone_work);
 	return 0;
 }
 
