@@ -1,3 +1,14 @@
+linux-2.6 (2.6.32-9) zelazny; urgency=low
+
+  [ Mikhail Gusarov ]
+  * Upload
+  
+  [ Lars-Peter Clausen ]
+  * jzcodec: Only support 16bit for now.
+  * rtc-jz4740: Fix driver config symbol name in Makefile
+
+ -- Mikhail Gusarov <dottedmag@dottedmag.net>  Tue, 30 Mar 2010 05:07:34 +0700
+
 linux-2.6 (2.6.32-8) zelazny; urgency=low
 
   [ Mikhail Gusarov ]
