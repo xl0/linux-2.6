@@ -1,3 +1,17 @@
+linux-2.6 (2.6.32-10) zelazny; urgency=low
+
+  [ Mikhail Gusarov ]
+  * Upload
+  
+   [ Lars-Peter Clausen ]
+  * n516-display: Offload inital hostfb blank into workqueue (OI#854)
+  * sound-soc-n516: Fix turning on the speaker when the headphones are removed.
+  
+  [ Maxim Levitsky ]
+  * MMC: fix hang if card was removed during suspend and unsafe resume was enabled
+
+ -- Mikhail Gusarov <dottedmag@dottedmag.net>  Thu, 08 Apr 2010 00:44:08 +0700
+
 linux-2.6 (2.6.32-9) zelazny; urgency=low
 
   [ Mikhail Gusarov ]
