@@ -20,6 +20,7 @@
 #include <linux/irq.h>
 #include <linux/gpio.h>
 #include <linux/jz4740_fb.h>
+#include <linux/workqueue.h>
 
 #include <asm/mach-jz4740/platform.h>
 #include <asm/mach-jz4740/board-n516.h>
@@ -28,6 +29,9 @@
 #include <linux/console.h>
 
 extern struct platform_device jz_lcd_device;
+
+static struct work_struct n516_enable_hostfb_work;
+static bool n516_hostfb_enabled;
 
 static struct fb_videomode n516_fb_modes[] = {
 	[0] = {
@@ -77,16 +81,22 @@ static const char *metronome_gpio_names[] = {
 	"Metronome ERR",
 };
 
-static int n516_enable_hostfb(bool enable)
+static void n516_enable_hostfb_worker(struct work_struct *work)
 {
-	int ret;
-	int blank = enable ? FB_BLANK_UNBLANK : FB_BLANK_POWERDOWN;
+	int blank;
 
-	/*acquire_console_sem();*/
-	ret = fb_blank(n516_metronome_info.host_fbinfo, blank);
-	/*release_console_sem();*/
+	acquire_console_sem();
 
-	return ret;
+	blank = n516_hostfb_enabled ? FB_BLANK_UNBLANK : FB_BLANK_POWERDOWN;
+	fb_blank(n516_metronome_info.host_fbinfo, blank);
+
+	release_console_sem();
+}
+
+static void n516_enable_hostfb(bool enable)
+{
+	n516_hostfb_enabled = enable;
+	schedule_work(&n516_enable_hostfb_work);
 }
 
 static int n516_init_metronome_gpios(struct metronomefb_par *par)
@@ -108,7 +118,6 @@ static int n516_init_metronome_gpios(struct metronomefb_par *par)
 
 	return 0;
 err:
-	gpio_direction_output(GPIO_DISPLAY_OFF, 1);
 	for (--i; i >= 0; --i)
 		gpio_free(metronome_gpios[i]);
 
@@ -178,7 +187,7 @@ static int n516_fb_notifier_callback(struct notifier_block *self,
 	case FB_EVENT_FB_UNREGISTERED:
 		return n516_unshare_video_mem(info);
 	default:
-		 break;
+		break;
 	}
 
 	return 0;
@@ -263,11 +272,11 @@ static void n516_power_ctl(struct metronomefb_par *par, int cmd)
 	switch (cmd) {
 	case METRONOME_POWER_OFF:
 		gpio_set_value(GPIO_DISPLAY_OFF, 1);
-		n516_enable_hostfb(false);
+		fb_blank(n516_metronome_info.host_fbinfo, FB_BLANK_NORMAL);
 		break;
 	case METRONOME_POWER_ON:
 		gpio_set_value(GPIO_DISPLAY_OFF, 0);
-		n516_enable_hostfb(true);
+		fb_blank(n516_metronome_info.host_fbinfo, FB_BLANK_UNBLANK);
 		break;
 	}
 }
@@ -378,6 +387,9 @@ static int __init n516_init(void)
 		return ret;
 
 	gpio_direction_output(GPIO_DISPLAY_OFF, 1);
+
+	n516_hostfb_enabled = false;
+	INIT_WORK(&n516_enable_hostfb_work, n516_enable_hostfb_worker);
 
 	/* before anything else, we request notification for any fb
 	 * creation events */
