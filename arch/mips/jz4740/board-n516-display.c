@@ -30,8 +30,8 @@
 
 extern struct platform_device jz_lcd_device;
 
-static struct work_struct n516_enable_hostfb_work;
-static bool n516_hostfb_enabled;
+static struct work_struct n516_init_work;
+static struct completion n516_init_completed;
 
 static struct fb_videomode n516_fb_modes[] = {
 	[0] = {
@@ -81,22 +81,16 @@ static const char *metronome_gpio_names[] = {
 	"Metronome ERR",
 };
 
-static void n516_enable_hostfb_worker(struct work_struct *work)
+static void n516_enable_hostfb(bool enable)
 {
 	int blank;
 
 	acquire_console_sem();
 
-	blank = n516_hostfb_enabled ? FB_BLANK_UNBLANK : FB_BLANK_POWERDOWN;
+	blank = enable ? FB_BLANK_UNBLANK : FB_BLANK_POWERDOWN;
 	fb_blank(n516_metronome_info.host_fbinfo, blank);
 
 	release_console_sem();
-}
-
-static void n516_enable_hostfb(bool enable)
-{
-	n516_hostfb_enabled = enable;
-	schedule_work(&n516_enable_hostfb_work);
 }
 
 static int n516_init_metronome_gpios(struct metronomefb_par *par)
@@ -124,10 +118,39 @@ err:
 	return ret;
 }
 
-static int n516_share_video_mem(struct fb_info *info)
+static void n516_init_worker(struct work_struct *work)
 {
 	int ret;
 
+	dev_dbg(&n516_device->dev, "ENTER %s\n", __FUNCTION__);
+	/* Disable host fb until we need it */
+	n516_enable_hostfb(0);
+
+	/* try to refcount host drv since we are the consumer after this */
+	if (!try_module_get(n516_metronome_info.host_fbinfo->fbops->owner)) {
+		dev_err(&n516_device->dev, "Failed to get module\n");
+		return;
+	}
+
+	/* this _add binds metronomefb to n516. metronomefb refcounts n516 */
+	ret = platform_device_add(n516_device);
+
+	if (ret) {
+		platform_device_put(n516_device);
+		dev_err(&n516_device->dev,
+				"platform_device_add() has failed\n");
+		return;
+	}
+
+	/* request our platform independent driver */
+	request_module("metronomefb");
+	complete(&n516_init_completed);
+	dev_dbg(&n516_device->dev, "EXIT %s\n", __FUNCTION__);
+}
+
+
+static int n516_share_video_mem(struct fb_info *info)
+{
 	dev_dbg(&n516_device->dev, "ENTER %s\n", __FUNCTION__);
 	dev_dbg(&n516_device->dev,
 			"%s, info->var.xres = %u, info->var.yres = %u\n",
@@ -141,23 +164,7 @@ static int n516_share_video_mem(struct fb_info *info)
 	n516_metronome_info.metromem = info->screen_base;
 	n516_metronome_info.host_fbinfo = info;
 
-	/* Disable host fb until we need it */
-	n516_enable_hostfb(false);
-
-	/* try to refcount host drv since we are the consumer after this */
-	if (!try_module_get(info->fbops->owner))
-		return -ENODEV;
-
-	/* this _add binds metronomefb to n516. metronomefb refcounts n516 */
-	ret = platform_device_add(n516_device);
-
-	if (ret) {
-		platform_device_put(n516_device);
-		return ret;
-	}
-
-	/* request our platform independent driver */
-	request_module("metronomefb");
+	schedule_work(&n516_init_work);
 
 	return 0;
 }
@@ -383,21 +390,26 @@ static int __init n516_init(void)
 
 	/* Keep the metronome off, until its driver is loaded */
 	ret = gpio_request(GPIO_DISPLAY_OFF, "Metronome OFF");
-	if (ret)
-		return ret;
+	if (ret) {
+		printk(KERN_ERR "n516-display: Cannot request GPIO\n");
+		goto err_gpio_metronome_off;
+	}
+
+
+	INIT_WORK(&n516_init_work, n516_init_worker);
+	init_completion(&n516_init_completed);
 
 	gpio_direction_output(GPIO_DISPLAY_OFF, 1);
-
-	n516_hostfb_enabled = false;
-	INIT_WORK(&n516_enable_hostfb_work, n516_enable_hostfb_worker);
 
 	/* before anything else, we request notification for any fb
 	 * creation events */
 	fb_register_client(&n516_fb_notif);
 
 	n516_device = platform_device_alloc("metronomefb", -1);
-	if (!n516_device)
-		return -ENOMEM;
+	if (!n516_device) {
+		ret = -ENOMEM;
+		goto err_pdev_alloc;
+	}
 
 	/* the n516_board that will be seen by metronomefb is a copy */
 	platform_device_add_data(n516_device, &n516_board,
@@ -405,7 +417,27 @@ static int __init n516_init(void)
 
 	n516_presetup_fb();
 
+	ret = wait_for_completion_timeout(&n516_init_completed, HZ * 5);
+	if (ret < 0) {
+		dev_err(&n516_device->dev, "Initialization was interrupted\n");
+		goto err_wait_for_completion;
+	} else {
+		if (ret == 0) {
+			dev_err(&n516_device->dev, "Initialization timed out\n");
+			ret = -ETIMEDOUT;
+			goto err_wait_for_completion;
+		}
+	}
+
 	return 0;
+
+err_wait_for_completion:
+	platform_device_put(n516_device);
+err_pdev_alloc:
+	gpio_free(GPIO_DISPLAY_OFF);
+err_gpio_metronome_off:
+
+	return ret;
 }
 module_init(n516_init);
 
