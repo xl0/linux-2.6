@@ -248,6 +248,8 @@ static int __devinit jz4740_rtc_probe(struct platform_device *pdev)
 		goto err_release_mem_region;
 	}
 
+	spin_lock_init(&rtc->lock);
+
 	platform_set_drvdata(pdev, rtc);
 
 	rtc->rtc = rtc_device_register(pdev->name, &pdev->dev, &jz4740_rtc_ops,
