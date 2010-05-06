@@ -406,6 +406,12 @@ int irq_to_gpio(unsigned gpio)
 }
 EXPORT_SYMBOL_GPL(irq_to_gpio);
 
+/*
+ * This lock class tells lockdep that GPIO irqs are in a different
+ * category than their parents, so it won't report false recursion.
+ */
+static struct lock_class_key gpio_lock_class;
+
 #define JZ_GPIO_CHIP(_bank) { \
 	.irq_base = JZ_IRQ_GPIO_BASE_ ## _bank, \
 	.gpio_chip = { \
@@ -483,6 +489,7 @@ int __init jz_gpiolib_init(void)
 		set_irq_data(chip->irq, chip);
 		set_irq_chained_handler(chip->irq, jz_gpio_irq_demux_handler);
 		for (irq = chip->irq_base; irq < chip->irq_base + chip->gpio_chip.ngpio; ++irq) {
+			lockdep_set_class(&irq_desc[irq].lock, &gpio_lock_class);
 			set_irq_chip_and_handler(irq, &chip->irq_chip, handle_level_irq);
 			set_irq_chip_data(irq, chip);
 		}
