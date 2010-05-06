@@ -390,7 +390,7 @@ static int jz_gpio_irq_set_wake(unsigned int irq, unsigned int on)
 		chip->wakeup &= ~IRQ_TO_BIT(irq);
 	spin_unlock(&chip->lock);
 
-	set_irq_wake(chip->irq, !!(chip->wakeup));
+	set_irq_wake(chip->irq, on);
 	return 0;
 }
 
