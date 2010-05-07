@@ -1,3 +1,21 @@
+linux-2.6 (2.6.32-11) zelazny; urgency=low
+
+  [ Yauhen Kharuzhy ]
+  * n516-display: Fix potential lockups at initialization
+
+  [ Lars-Peter Clausen ]
+  * rtc-jz4740: Init spinlock
+
+  [ Yauhen Kharuzhy ]
+  * i2c-jz4740: Fix NACK & STOP conditions generation
+
+  [ Lars-Peter Clausen ]
+  * Use a seperate lock class for gpio irq desk locks to avoid lockdep
+    false
+  * Fix set_irq_wake call on parent irq.
+
+ -- Yauhen Kharuzhy <jekhor@gmail.com>  Fri, 07 May 2010 11:20:42 +0300
+
 linux-2.6 (2.6.32-10) zelazny; urgency=low
 
   [ Mikhail Gusarov ]
