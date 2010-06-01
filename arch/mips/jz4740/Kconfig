@@ -8,6 +8,11 @@ config JZ4740_N516
 	select DMA_NONCOHERENT
 	select SOC_JZ4740
 
+config JZ4740_N516v2
+	bool "Hanvon N516 eBook reader, version 2 (with Epson display controller)"
+	select DMA_NONCOHERENT
+	select SOC_JZ4740
+
 config JZ4740_N526
 	bool "Hanvon n526 eBook reader"
 	select DMA_NONCOHERENT
