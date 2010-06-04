@@ -1,3 +1,26 @@
+linux-2.6 (2.6.32-13) zelazny; urgency=low
+
+  [ Yauhen Kharuzhy ]
+  * metronomefb: Remove unused csum_table array
+  * JZ4740: Add new N516v2 board
+
+  [ Wu Zhangjin ]
+  * MIPS: Tracing: Add static function tracer support for MIPS
+  * MIPS: Tracing: Enable HAVE_FUNCTION_TRACE_MCOUNT_TEST for MIPS
+
+  [ Yauhen Kharuzhy ]
+  * N516: Disable secondary UART in kernel config
+  * Update changelog
+
+ -- Yauhen Kharuzhy <jekhor@gmail.com>  Fri, 04 Jun 2010 12:32:14 +0300
+
+linux-2.6 (2.6.32-12) zelazny; urgency=low
+
+  * metronomefb: fix rotation
+  * apollofb: fix rotation
+
+ -- Alexander Kerner <lunohod@openinkpot.org>  Mon, 17 May 2010 15:54:47 +0200
+
 linux-2.6 (2.6.32-11) zelazny; urgency=low
 
   [ Yauhen Kharuzhy ]
