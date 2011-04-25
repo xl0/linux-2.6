@@ -410,6 +410,9 @@ static void __init bootmem_init(void)
 	 * Reserve the bootmap memory.
 	 */
 	reserve_bootmem(PFN_PHYS(mapstart), bootmap_size, BOOTMEM_DEFAULT);
+	printk("mapstart = 0x%lx, PFN_PHYS(mapstart) = 0x%x\n", mapstart, PFN_PHYS(mapstart));
+	/* Metronome waveforms loaded by the bootloader.*/
+	reserve_bootmem(0x50000, 65536, BOOTMEM_DEFAULT);
 
 	/*
 	 * Reserve initrd memory if needed.

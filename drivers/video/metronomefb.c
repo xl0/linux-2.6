@@ -1033,6 +1033,39 @@ DEVICE_ATTR(autorefresh_interval, 0644,
 		metronomefb_autorefresh_interval_show, metronomefb_autorefresh_interval_store);
 
 
+static int preloaded_wf = 0;
+
+static int get_preloaded_wf(const struct firmware **wf, unsigned long addr, int len){
+	struct firmware *fw_entry;
+
+	fw_entry = kmalloc(sizeof(struct firmware), GFP_KERNEL);
+	if (!fw_entry) {
+		WARN_ON(1);
+		return -ENOMEM;
+	}
+
+	fw_entry->data = ioremap(addr, len);
+	if (!fw_entry->data) {
+		WARN_ON(1);
+		goto fail_ioremap;
+	}
+
+        print_hex_dump_bytes("TX: ", DUMP_PREFIX_ADDRESS,
+                        fw_entry->data, 32);
+
+	fw_entry->size = len;
+
+	*wf = fw_entry;
+
+	return 0;
+
+fail_ioremap:
+	kfree(fw_entry);
+
+	return -ENOMEM;
+}
+
+
 static int __devinit metronomefb_probe(struct platform_device *dev)
 {
 	struct fb_info *info;
@@ -1168,13 +1201,22 @@ static int __devinit metronomefb_probe(struct platform_device *dev)
 
 	info->fix.smem_start = par->metromem_dma;
 
-	/* load the waveform in. assume mode 3, temp 31 for now
-		a) request the waveform file from userspace
-		b) process waveform and decode into metromem */
-	retval = request_firmware(&fw_entry, "metronome.wbf", &dev->dev);
-	if (retval < 0) {
-		dev_err(&dev->dev, "Failed to get waveform\n");
-		goto err_fybuckets;
+	if (preloaded_wf) {
+		retval = get_preloaded_wf(&fw_entry, 0x50000, 65536);
+		if (retval) {
+			dev_err(&dev->dev, "Failed to get preloaded waveform\n");
+			goto err_fybuckets;
+		}
+
+	} else {
+		/* load the waveform in. assume mode 3, temp 31 for now
+			a) request the waveform file from userspace
+			b) process waveform and decode into metromem */
+		retval = request_firmware(&fw_entry, "metronome.wbf", &dev->dev);
+		if (retval < 0) {
+			dev_err(&dev->dev, "Failed to get waveform\n");
+			goto err_fybuckets;
+		}
 	}
 
 	retval = load_waveform((u8 *) fw_entry->data, fw_entry->size, WF_MODE_GC, temp,
@@ -1359,6 +1401,9 @@ static void __exit metronomefb_exit(void)
 
 module_param(temp, int, 0);
 MODULE_PARM_DESC(temp, "Set current temperature");
+
+module_param(preloaded_wf, int, 0);
+MODULE_PARM_DESC(preloaded_wf, "Use waveform data preloaded by the bootloader");
 
 module_init(metronomefb_init);
 module_exit(metronomefb_exit);

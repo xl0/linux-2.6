@@ -386,6 +386,7 @@ static struct metronome_board n516_board __initdata = {
 
 static int __init n516_init(void)
 {
+//	return 0;
 	int ret;
 
 	/* Keep the metronome off, until its driver is loaded */

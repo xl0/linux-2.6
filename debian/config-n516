@@ -1,7 +1,7 @@
 #
 # Automatically generated make config: don't edit
 # Linux kernel version: 2.6.32
-# Fri Jun  4 12:26:14 2010
+# Mon Dec 20 23:57:26 2010
 #
 CONFIG_MIPS=y
 
@@ -384,7 +384,8 @@ CONFIG_DEFAULT_TCP_CONG="cubic"
 # Generic Driver Options
 #
 CONFIG_UEVENT_HELPER_PATH="/sbin/hotplug"
-# CONFIG_DEVTMPFS is not set
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
 CONFIG_STANDALONE=y
 CONFIG_PREVENT_FIRMWARE_BUILD=y
 CONFIG_FW_LOADER=y
@@ -966,7 +967,6 @@ CONFIG_USB_FILE_STORAGE=m
 # CONFIG_USB_MIDI_GADGET is not set
 # CONFIG_USB_G_PRINTER is not set
 # CONFIG_USB_CDC_COMPOSITE is not set
-# CONFIG_USB_DUMMY_GADGET is not set
 
 #
 # OTG and related infrastructure

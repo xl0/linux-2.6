@@ -36,4 +36,9 @@
 #define GPIO_DISPLAY_ERR	JZ_GPIO_PORTC(23)
 #define GPIO_DISPLAY_OFF	JZ_GPIO_PORTD(1)
 
+/* Preloaded firmware, passed by the boot loader */
+
+#define N516_WF_PHYS	(0x50000)
+#define N516_WF_LEN	(65536)
+
 #endif /* __ASM_JZ4740_N516_H__ */
