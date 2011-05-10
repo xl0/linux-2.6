@@ -16,7 +16,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
  */
-//#define DEBUG
+#define DEBUG
 #include <linux/netdevice.h>
 #include <linux/etherdevice.h>
 #include <linux/ethtool.h>
@@ -33,6 +33,8 @@ module_param(napi_weight, int, 0444);
 static int csum = 1, gso = 1;
 module_param(csum, bool, 0444);
 module_param(gso, bool, 0444);
+
+#define TRACE { printk ("%s:%d %s()\n", __FILE__, __LINE__, __func__); }
 
 /* FIXME: MTU in config. */
 #define MAX_PACKET_LEN (ETH_HLEN + VLAN_HLEN + ETH_DATA_LEN)
@@ -234,6 +236,8 @@ static void receive_buf(struct net_device *dev, void *buf, unsigned int len)
 	struct page *page;
 	struct skb_vnet_hdr *hdr;
 
+//	TRACE;
+
 	if (unlikely(len < sizeof(struct virtio_net_hdr) + ETH_HLEN)) {
 		pr_debug("%s: short packet %i\n", dev->name, len);
 		dev->stats.rx_length_errors++;
@@ -269,7 +273,7 @@ static void receive_buf(struct net_device *dev, void *buf, unsigned int len)
 	dev->stats.rx_packets++;
 
 	if (hdr->hdr.flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) {
-		pr_debug("Needs csum!\n");
+//		pr_debug("Needs csum!\n");
 		if (!skb_partial_csum_set(skb,
 					  hdr->hdr.csum_start,
 					  hdr->hdr.csum_offset))
@@ -277,11 +281,11 @@ static void receive_buf(struct net_device *dev, void *buf, unsigned int len)
 	}
 
 	skb->protocol = eth_type_trans(skb, dev);
-	pr_debug("Receiving skb proto 0x%04x len %i type %i\n",
-		 ntohs(skb->protocol), skb->len, skb->pkt_type);
+//	pr_debug("Receiving skb proto 0x%04x len %i type %i\n",
+//		 ntohs(skb->protocol), skb->len, skb->pkt_type);
 
 	if (hdr->hdr.gso_type != VIRTIO_NET_HDR_GSO_NONE) {
-		pr_debug("GSO!\n");
+//		pr_debug("GSO!\n");
 		switch (hdr->hdr.gso_type & ~VIRTIO_NET_HDR_GSO_ECN) {
 		case VIRTIO_NET_HDR_GSO_TCPV4:
 			skb_shinfo(skb)->gso_type = SKB_GSO_TCPV4;
@@ -330,8 +334,10 @@ static int add_recvbuf_small(struct virtnet_info *vi, gfp_t gfp)
 	int err;
 
 	skb = netdev_alloc_skb_ip_align(vi->dev, MAX_PACKET_LEN);
-	if (unlikely(!skb))
+	if (unlikely(!skb)) {
+		TRACE;
 		return -ENOMEM;
+	}
 
 	skb_put(skb, MAX_PACKET_LEN);
 
@@ -417,6 +423,8 @@ static bool try_fill_recv(struct virtnet_info *vi, gfp_t gfp)
 	int err;
 	bool oom;
 
+	int i = 0;
+
 	do {
 		if (vi->mergeable_rx_bufs)
 			err = add_recvbuf_mergeable(vi, gfp);
@@ -429,9 +437,12 @@ static bool try_fill_recv(struct virtnet_info *vi, gfp_t gfp)
 		if (err < 0)
 			break;
 		++vi->num;
+		i++;
 	} while (err > 0);
 	if (unlikely(vi->num > vi->max))
 		vi->max = vi->num;
+
+//	printk("i=%d\n", i);
 	virtqueue_kick(vi->rvq);
 	return !oom;
 }
@@ -515,7 +526,7 @@ static unsigned int free_old_xmit_skbs(struct virtnet_info *vi)
 	unsigned int len, tot_sgs = 0;
 
 	while ((skb = virtqueue_get_buf(vi->svq, &len)) != NULL) {
-		pr_debug("Sent skb %p\n", skb);
+//		pr_debug("Sent skb %p\n", skb);
 		vi->dev->stats.tx_bytes += skb->len;
 		vi->dev->stats.tx_packets++;
 		tot_sgs += skb_vnet_hdr(skb)->num_sg;
@@ -529,7 +540,7 @@ static int xmit_skb(struct virtnet_info *vi, struct sk_buff *skb)
 	struct skb_vnet_hdr *hdr = skb_vnet_hdr(skb);
 	const unsigned char *dest = ((struct ethhdr *)skb->data)->h_dest;
 
-	pr_debug("%s: xmit %p %pM\n", vi->dev->name, skb, dest);
+//	pr_debug("%s: xmit %p %pM\n", vi->dev->name, skb, dest);
 
 	if (skb->ip_summed == CHECKSUM_PARTIAL) {
 		hdr->hdr.flags = VIRTIO_NET_HDR_F_NEEDS_CSUM;
@@ -952,11 +963,20 @@ static int virtnet_probe(struct virtio_device *vdev)
 	/* If we can receive ANY GSO packets, we must allocate large ones. */
 	if (virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_TSO4) ||
 	    virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_TSO6) ||
-	    virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_ECN))
-		vi->big_packets = true;
+	    virtio_has_feature(vdev, VIRTIO_NET_F_GUEST_ECN)) {
 
-	if (virtio_has_feature(vdev, VIRTIO_NET_F_MRG_RXBUF))
+		vi->big_packets = true;
+		printk(KERN_NOTICE "Big packets");
+	} else {
+		printk(KERN_NOTICE "Nornal packets");
+	}
+
+	if (virtio_has_feature(vdev, VIRTIO_NET_F_MRG_RXBUF)) {
 		vi->mergeable_rx_bufs = true;
+		printk(KERN_NOTICE "MRG_RXBUF present!\n");
+	} else {
+		printk(KERN_NOTICE "MRG_RXBUF absent!\n");
+	}
 
 	/* We expect two virtqueues, receive then send,
 	 * and optionally control. */
@@ -970,6 +990,7 @@ static int virtnet_probe(struct virtio_device *vdev)
 	vi->svq = vqs[1];
 
 	if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_CTRL_VQ)) {
+		TRACE;
 		vi->cvq = vqs[2];
 
 		if (virtio_has_feature(vi->vdev, VIRTIO_NET_F_CTRL_VLAN))
@@ -1064,13 +1085,13 @@ static struct virtio_device_id id_table[] = {
 };
 
 static unsigned int features[] = {
-	VIRTIO_NET_F_CSUM, VIRTIO_NET_F_GUEST_CSUM,
-	VIRTIO_NET_F_GSO, VIRTIO_NET_F_MAC,
-	VIRTIO_NET_F_HOST_TSO4, VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_HOST_TSO6,
-	VIRTIO_NET_F_HOST_ECN, VIRTIO_NET_F_GUEST_TSO4, VIRTIO_NET_F_GUEST_TSO6,
-	VIRTIO_NET_F_GUEST_ECN, VIRTIO_NET_F_GUEST_UFO,
-	VIRTIO_NET_F_MRG_RXBUF, VIRTIO_NET_F_STATUS, VIRTIO_NET_F_CTRL_VQ,
-	VIRTIO_NET_F_CTRL_RX, VIRTIO_NET_F_CTRL_VLAN,
+//	VIRTIO_NET_F_CSUM, VIRTIO_NET_F_GUEST_CSUM,
+	/*VIRTIO_NET_F_GSO,*/ VIRTIO_NET_F_MAC,
+//	VIRTIO_NET_F_HOST_TSO4, VIRTIO_NET_F_HOST_UFO, VIRTIO_NET_F_HOST_TSO6,
+//	VIRTIO_NET_F_HOST_ECN, VIRTIO_NET_F_GUEST_TSO4, VIRTIO_NET_F_GUEST_TSO6,
+//	VIRTIO_NET_F_GUEST_ECN, VIRTIO_NET_F_GUEST_UFO,
+	VIRTIO_NET_F_MRG_RXBUF, VIRTIO_NET_F_STATUS, /*VIRTIO_NET_F_CTRL_VQ, 
+	VIRTIO_NET_F_CTRL_RX, VIRTIO_NET_F_CTRL_VLAN,*/
 };
 
 static struct virtio_driver virtio_net_driver = {

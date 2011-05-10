@@ -114,8 +114,8 @@ static inline bool virtio_has_feature(const struct virtio_device *vdev,
 	else
 		BUG_ON(fbit >= 32);
 
-	if (fbit < VIRTIO_TRANSPORT_F_START)
-		virtio_check_driver_offered_feature(vdev, fbit);
+//	if (fbit < VIRTIO_TRANSPORT_F_START)
+//		virtio_check_driver_offered_feature(vdev, fbit);
 
 	return test_bit(fbit, vdev->features);
 }

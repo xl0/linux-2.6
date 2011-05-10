@@ -26,6 +26,8 @@
 #include <linux/highmem.h>
 #include <linux/spinlock.h>
 
+#define TRACE { printk ("%s:%d %s()\n", __FILE__, __LINE__, __func__); }
+
 MODULE_AUTHOR("Anthony Liguori <aliguori@us.ibm.com>");
 MODULE_DESCRIPTION("virtio-pci");
 MODULE_LICENSE("GPL");
@@ -501,8 +503,10 @@ static int vp_try_to_find_vqs(struct virtio_device *vdev, unsigned nvqs,
 			/* Best option: one for change interrupt, one per vq. */
 			nvectors = 1;
 			for (i = 0; i < nvqs; ++i)
-				if (callbacks[i])
+				if (callbacks[i]) {
+					TRACE;
 					++nvectors;
+				}
 		} else {
 			/* Second best: one for change, shared for all vqs. */
 			nvectors = 2;
@@ -561,7 +565,7 @@ static int vp_find_vqs(struct virtio_device *vdev, unsigned nvqs,
 		       const char *names[])
 {
 	int err;
-
+#if 0
 	/* Try MSI-X with one vector per queue. */
 	err = vp_try_to_find_vqs(vdev, nvqs, vqs, callbacks, names, true, true);
 	if (!err)
@@ -571,6 +575,7 @@ static int vp_find_vqs(struct virtio_device *vdev, unsigned nvqs,
 				 true, false);
 	if (!err)
 		return 0;
+#endif
 	/* Finally fall back to regular interrupts. */
 	return vp_try_to_find_vqs(vdev, nvqs, vqs, callbacks, names,
 				  false, false);

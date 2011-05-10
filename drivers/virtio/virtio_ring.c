@@ -438,6 +438,7 @@ struct virtqueue *vring_new_virtqueue(unsigned int num,
 #endif
 
 	vq->indirect = virtio_has_feature(vdev, VIRTIO_RING_F_INDIRECT_DESC);
+	vq->indirect = 0;
 
 	/* No callback?  Tell other side not to bother us. */
 	if (!callback)
